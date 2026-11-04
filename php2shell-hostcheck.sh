@@ -1,27 +1,46 @@
 #!/usr/bin/env bash
-# php2shell-hostcheck.sh - host-side checker for PHP2Shell
-#                          (CVE-2026-109618, CVE-2026-109619)
+# Copyright 2026 Drexx Laggui
+# SPDX-License-Identifier: Apache-2.0
 #
-# Read-only. It never executes a PHP binary: versions are read from the
-# bytes of each binary or library, and from /proc/<pid>/exe for running
-# processes, so the running image is the one checked.
+# php2shell-hostcheck.sh - checks whether the PHP on this server is fixed
+#                          for PHP2Shell (CVE-2026-109618, CVE-2026-109619)
 #
-# Results, one line per PHP runtime:
-#   PASS          The package changelog records the fix for both CVEs, or
-#                 the build's upstream version is at or after the fix.
-#   FAIL          The version is in the affected range and no remediation
-#                 record exists (no changelog entry, or an unpackaged build).
-#   CHECK FAILED  The evidence needed for PASS or FAIL could not be read.
-#                 The reason and the required next step are printed.
+# WHAT IT DOES. It finds every PHP program and PHP web-server module on the
+# server, including ones that are running right now and ones inside running
+# containers. For each one it:
+#   1. reads the version number stored inside the file, without running it
+#      (for a running program it reads the copy in memory, through
+#      /proc/<pid>/exe, so it checks what is really running);
+#   2. works out how PHP is connected to the web server (its "SAPI"), for
+#      example as an Apache module or as PHP-FPM;
+#   3. finds the software package that installed the file (dpkg, rpm or apk);
+#   4. searches that package's changelog for both CVE numbers.
+# It only reads. It changes nothing.
 #
-# Exit status: 0 all PASS, 1 at least one FAIL, 2 no FAIL but at least one
-# CHECK FAILED, 64 usage error.
+# RESULTS (one line for each PHP program or module):
+#   PASS          There is proof of the fix: the changelog lists both CVE
+#                 numbers, or the version is the fixed one or newer.
+#   FAIL          The version is old enough to have the bugs, and nothing
+#                 shows a fix: the changelog does not list them, or the
+#                 program was built by hand with no package record.
+#   CHECK FAILED  The proof could not be read either way. The line says why
+#                 and what to do next. It never guesses.
 #
-# Rule set dated 2026-11-04: fixed in 8.2.35, 8.3.36, 8.4.27, 8.5.12 (PHP
-# security releases of 21 October 2026). Branches before 8.2 are outside the
-# vendor advisory; sources disagree on whether they are affected, so without
-# a changelog record they are CHECK FAILED, never PASS. CVE-2026-115560 is
-# NOT covered.
+# Example: Ubuntu's PHP 8.3.6 package is numbered below the fix (8.3.36),
+# but its changelog lists both CVE numbers, so the result is PASS.
+#
+# HOW TO USE
+#   sudo ./php2shell-hostcheck.sh              check this server
+#   sudo ./php2shell-hostcheck.sh --root DIR   check a mounted disk or image
+#
+# Exit status: 0 = all PASS. 1 = at least one FAIL. 2 = no FAIL, but at least
+# one CHECK FAILED. 64 = wrong command-line options.
+#
+# RULES dated 2026-11-04: fixed in 8.2.35, 8.3.36, 8.4.27 and 8.5.12 (PHP
+# security releases of 21 October 2026). PHP's warning covers branches 8.2
+# to 8.5 only. Experts disagree about older branches, so for those the
+# result is CHECK FAILED unless the changelog lists the fix. A third bug,
+# CVE-2026-115560, is NOT checked.
 
 set -o pipefail
 export LC_ALL=C

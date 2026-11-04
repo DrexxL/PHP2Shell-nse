@@ -1,38 +1,46 @@
+-- Copyright 2026 Drexx Laggui
+-- SPDX-License-Identifier: Apache-2.0
+
 local http      = require "http"
 local shortport = require "shortport"
 local stdnse    = require "stdnse"
 local table     = require "table"
 
 description = [[
-Banner-triage check for PHP2Shell (CVE-2026-109618, CVE-2026-109619).
+Checks web servers for signs of PHP2Shell (CVE-2026-109618, CVE-2026-109619),
+two serious PHP bugs that were fixed on 21 October 2026.
 
-WHAT IT DOES. Sends ordinary HTTP GET requests (no exploit payload, redirects
-not followed) to every configured path. It records each PHP version string
-disclosed in the X-Powered-By or Server response header or in a phpinfo()
-page heading, and compares it with the first fixed release on each branch
-named in the PHP security advisory.
+WHAT IT DOES. It asks each web server for normal pages, the same way a web
+browser would. It sends no attack and does not follow redirects. Then it
+looks for the PHP version that the server reports about itself. The server
+can report it in the X-Powered-By or Server header, or on a PHP information
+page (phpinfo). The script compares that version with the first fixed
+version for its branch: 8.2.35, 8.3.36, 8.4.27 or 8.5.12.
 
-WHAT IT CANNOT DO. A version string in an HTTP response is a claim, not proof.
-A proxy, application or administrator can set, strip or forge it, and it says
-nothing about fixes a distribution has backported. The script therefore never
-reports a service as "not vulnerable". Every result describes one HTTP
-service, not the host, and needs host-side confirmation (runtime and package
-inspection) before it goes into a compliance record.
+Example: a server that says "X-Powered-By: PHP/8.2.10" reports a version
+older than 8.2.35, so the script shows BANNER BELOW FIX.
 
-RESULTS (one per HTTP service, always printed):
-  BANNER BELOW FIX        The disclosed version precedes the fix. Some
-                          distribution builds (for example Ubuntu's) report
-                          the bare upstream number even when the fix has
-                          been backported, so this too needs confirmation.
-  BANNER AT OR ABOVE FIX  The disclosed version is at or after the fix.
-                          This is not proof that the service is patched.
-  CHECK FAILED            No usable evidence: no version disclosed, no
-                          response, conflicting versions, a distribution
-                          build, or a branch outside the vendor advisory.
+WHAT IT CANNOT DO. The version a server reports is a claim, not proof. It is
+like a name tag: a proxy, a program or an administrator can change it, hide
+it or fake it. It also cannot show fixes that a Linux distribution copied
+into an older version (a "backport"). So this script never says a server is
+safe or unsafe. Each result is about one web service, not the whole computer.
+Confirm every result on the server itself with php2shell-hostcheck.sh.
 
-Rules as of 2026-11-04: fixed in 8.2.35, 8.3.36, 8.4.27 and 8.5.12 (PHP
-security releases of 21 October 2026). Both CVEs are listed in the CISA Known
-Exploited Vulnerabilities catalog.
+RESULTS (one for each web service, always shown):
+  BANNER BELOW FIX        The reported version is older than the fix. Some
+                          distribution builds, such as Ubuntu's, show the
+                          plain version number even after a backported fix,
+                          so check this on the server.
+  BANNER AT OR ABOVE FIX  The reported version is the fixed one or newer.
+                          This is not proof that the server is fixed.
+  CHECK FAILED            The script found nothing it can use. Possible
+                          causes: no version shown, no response, different
+                          versions on different pages, a distribution build,
+                          or a branch outside PHP's warning.
+
+Rules dated 2026-11-04. Both CVEs are in the CISA Known Exploited
+Vulnerabilities catalog. A third bug, CVE-2026-115560, is not checked.
 ]]
 
 ---
@@ -41,33 +49,40 @@ Exploited Vulnerabilities catalog.
 -- nmap -sV -p 443 --script php2shell-detect.nse \
 --      --script-args 'php2shell-detect.paths=/app/,/login.php,php2shell-detect.probe-info' intranet.example
 --
--- @args php2shell-detect.paths Comma-separated extra paths to request in
---       addition to "/". Every path is examined; differing versions make
---       the check fail.
--- @args php2shell-detect.probe-info If set, also requests /index.php,
---       /info.php and /phpinfo.php and reads any phpinfo() heading.
--- @args php2shell-detect.vhost Host header to send (name-based virtual
---       hosts). For TLS, scan by hostname so Nmap also sends it as SNI.
+-- Keep -sV. Without it, nmap can skip web servers on unusual ports.
 --
--- Arguments are also accepted under the script's file name, so a renamed
--- copy keeps working.
+-- @args php2shell-detect.paths Extra pages to check, separated by commas.
+--       The script always checks "/". It checks every page you list. If
+--       two pages report different versions, the result is CHECK FAILED.
+-- @args php2shell-detect.probe-info Set this to also check /index.php,
+--       /info.php and /phpinfo.php for a PHP information page.
+-- @args php2shell-detect.vhost The website name to send. Use it when one
+--       server hosts several websites. For HTTPS, scan by the website name
+--       instead of the IP address, so nmap sends the name during the
+--       secure connection setup (SNI) too.
+--
+-- The settings also work under the script's file name, so a renamed copy
+-- still works.
 --
 -- @output
 -- 80/tcp open  http
 -- | php2shell-detect:
 -- |   result: BANNER BELOW FIX
 -- |   reason: Disclosed PHP 8.2.10 precedes the fixed release 8.2.35. Some ...
--- |   action: Confirm on the host (php -v, package changelog), then patch.
+-- |   action: Confirm on the host: identify the PHP binary and SAPI that ...
 -- |   target: http://10.0.0.5:80  Host: 10.0.0.5  SNI: none
 -- |   evidence:
 -- |     GET / -> 200, x-powered-by: PHP/8.2.10
 -- |   rules: PHP security releases of 2026-10-21 (8.2.35, 8.3.36, 8.4.27, 8.5.12); rule set dated 2026-11-04
 -- |   checked_at: 2026-11-04T14:02:11Z
--- |   cves: CVE-2026-109618, CVE-2026-109619
--- |_  references: https://www.cve.org/CVERecord?id=CVE-2026-109618 ...
+-- |   cves: CVE-2026-109618, CVE-2026-109619 (both in the CISA KEV catalog)
+-- |   references:
+-- |     https://www.cve.org/CVERecord?id=CVE-2026-109618
+-- |     https://www.cve.org/CVERecord?id=CVE-2026-109619
+-- |_    https://www.cisa.gov/known-exploited-vulnerabilities-catalog
 
-author     = "Local security team"
-license    = "Same as Nmap--See https://nmap.org/book/man-legal.html"
+author     = "Drexx Laggui"
+license    = "Apache-2.0 -- https://www.apache.org/licenses/LICENSE-2.0"
 categories = {"safe", "discovery", "vuln"}
 
 portrule = shortport.http
