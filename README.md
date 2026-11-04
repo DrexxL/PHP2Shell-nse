@@ -164,6 +164,7 @@ during a maintenance window.
 | [Glossary](docs/glossary.md) | look up a technical word |
 | [Changelog](CHANGELOG.md) | see what changed and when |
 | [Security policy](SECURITY.md) | report a problem with the tools |
+| [AI assistance](AI-ASSISTANCE.md) | see which AI tools helped, with what, and how their work was checked |
 
 ## Limits
 
