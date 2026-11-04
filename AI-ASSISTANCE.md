@@ -10,7 +10,7 @@ code and the words came from.
 | Who | What they did |
 |---|---|
 | **Drexx Laggui** (maintainer) | Set the goals and the rules for the project; chose the audience and the writing style; made the decisions; created and manages the GitHub repositories; merged pull request #1; made the repository public; edited the README credits. |
-| **Claude (Anthropic's Opus 5.5)**, working with Codex (OpenAI's Daybreak Blue); | the decisions and some audits were run on Anthropic's Fable 5.1 |
+| **Claude (Anthropic's Opus 5.5)**, working with Codex (OpenAI's Daybreak Blue); the decisions and some audits were run on Anthropic's Fable 5.1 |
 | **External AI reviewers** | Two reviews were forwarded by the maintainer, who identified them as from GPT-6.1 Sol and from Codex (OpenAI's Daybreak Blue). Their findings were checked and fixed; see [CHANGELOG.md](CHANGELOG.md). |
 
 ## How the work was checked
