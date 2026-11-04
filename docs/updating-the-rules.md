@@ -9,6 +9,7 @@ fix for a new branch, update both tools the same way.
 | File | What to change |
 |---|---|
 | `php2shell-hostcheck.sh` | `RULES_DATE="..."` and `declare -A FIXED=(...)` near the top |
+| `php2shell-hostcheck-macos.sh` | `RULES_DATE="..."` and the `fixed_for` function near the top |
 | `php2shell-detect.nse` | `local RULES_DATE = "..."` and the `FIXED` table near the top, plus the `rules` text line in `action` and the release list in `description` |
 
 **Example:** in the host check, the rules look like this:

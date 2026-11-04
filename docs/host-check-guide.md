@@ -27,7 +27,8 @@ tool is missing, the check stops with a CHECK FAILED line that names it.
 | Containers | Running containers are checked from the host. Inside a container, the same rules apply as for its distribution. |
 | Windows WSL 2 | Expected to work: WSL 2 runs a real Linux kernel. Checks the PHP inside the WSL Linux system only. Windows drives are not searched. Not yet tested. |
 | Windows WSL 1 | Expected: files only. WSL 1 is expected not to provide the process information the check needs; the check then reports a CHECK FAILED line and checks only files on disk. Not yet tested. |
-| Windows itself, macOS, BSD | Not supported. The check needs Linux's `/proc` and bash 4. Use `--root` from a Linux computer to check a mounted Linux disk instead. |
+| macOS | Use the separate macOS host check, `php2shell-hostcheck-macos.sh`. See the [macOS guide](macos-guide.md). |
+| Windows itself, BSD | Not supported. The check needs Linux's `/proc` and bash 4. Use `--root` from a Linux computer to check a mounted Linux disk instead. |
 
 **Example (Alpine container):**
 

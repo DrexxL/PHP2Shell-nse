@@ -4,6 +4,16 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### macOS host check 1.0 (new)
+
+- `php2shell-hostcheck-macos.sh`: checks PHP on a Mac (Homebrew, MacPorts,
+  MAMP, XAMPP, Laravel Herd and any other copy on the start-up disk) and
+  running PHP processes (through `lsof`). Works with the bash 3.2 that macOS
+  includes. `--root` checks a mounted Mac disk.
+- Self-checking tests in `tests/hostcheck-macos-tests.sh` (28 tests), passing
+  under bash 5 and a real bash 3.2.57. Not yet run on a real Mac.
+- New guide: `docs/macos-guide.md`.
+
 ### Host check 1.1 (after the fourth audit)
 
 - Snap folders are found through the `/snap` link used on Fedora, Arch and

@@ -12,6 +12,8 @@ clean record.
 | Host check, PASS (changelog) | The installed package's changelog names both CVEs; the file's version, and on Debian/Ubuntu its checksum where the package recorded one, match the package record. | The package maker states the fix is included in this package, and the file is that package's file. | That the fix works, or that no other copy of PHP exists outside the searched filesystems. |
 | Host check, PASS (version) | The version stored inside the file is at or after the fixed release. | The file reports a fixed upstream version. | That the version string was not altered by someone who built the file. |
 | Host check, FAIL | The version is in the affected range, and no changelog entry or package record shows a fix. | No remediation record exists for this file. | That an attacker can exploit it. Exploitability also depends on configuration. |
+| macOS host check, PASS | The version stored inside the file is at or after the fixed release; for Homebrew, the file's version matches its Homebrew folder, which has an install receipt. | The file reports a fixed upstream version. | That the version string was not altered by whoever built the file. |
+| macOS host check, FAIL | The version is in the affected range; the Mac holds no changelog of fixes. | No remediation record exists on the Mac. | That an attacker can exploit it. |
 | Host check, CHECK FAILED | The evidence needed for PASS or FAIL was missing or contradictory. | Only that the check could not decide. | Anything about the bug. |
 | Network scan, any BANNER result | A version string in a web response. | That the server *reported* that string. | Anything about the real PHP version or its fixes. |
 

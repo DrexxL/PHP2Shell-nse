@@ -13,13 +13,19 @@ confirm that the tools behave as documented.
    sudo ./tests/hostcheck-tests.sh
    ```
 
-3. Run the network scan tests (needs nmap and python3):
+3. Run the macOS host check tests (on a Mac or on Linux):
+
+   ```bash
+   sudo ./tests/hostcheck-macos-tests.sh
+   ```
+
+4. Run the network scan tests (needs nmap and python3):
 
    ```bash
    ./tests/nse-tests.sh
    ```
 
-4. Check the last line of each run. It says how many tests passed and
+5. Check the last line of each run. It says how many tests passed and
    failed. The exit status is 0 only if all tests passed.
 
 Run the host check tests as root to include the "unreadable folder" test.
@@ -41,6 +47,34 @@ like a Linux program and contains a version string, for example
 | Other systems | Alpine packages and modules; an rpm image checked without the rpm tool; real rpm packages built with `rpmbuild` and installed into images with the database in `/var/lib/rpm` and in `/usr/lib/sysimage/rpm` (backport gives PASS, no fix gives FAIL, a mismatched file gives CHECK FAILED). The rpm package tests run only if `rpm` and `rpmbuild` are installed. |
 | Whole run | Empty image gives PASS with exit 0; container storage is reported; any FAIL gives exit 1; `--root /` is refused; an unreadable folder, or a run without root, is never reported as "nothing found". |
 | Package version | A package whose version cannot be read never gives PASS. |
+
+## What the macOS host check tests do
+
+`hostcheck-macos-tests.sh` makes fake Mac disks in a temporary folder. A
+fake "PHP program" is a tiny file that starts like a Mac program (Mach-O)
+and contains a version string. A fake `lsof` stands in for the running
+processes. The suite runs on a Mac or on Linux.
+
+| Area | Examples of what is tested |
+|---|---|
+| Homebrew | Below the fix gives FAIL with `brew upgrade` advice; the fix (also with a revision such as `8.4.27_1`) gives PASS; Apple-silicon and Intel locations; an Apache module is reported as `apache2handler`; a file whose version differs from its Homebrew folder gives CHECK FAILED; a Cellar folder with no install receipt is treated as unpackaged. |
+| Other sources | MacPorts, MAMP, XAMPP (branch 8.1 gives CHECK FAILED), Laravel Herd in a folder name with spaces, unpackaged builds, a release candidate of the fix, branch 8.6. |
+| Skipped places | `/System` and `/Volumes` are not searched; Docker Desktop storage is reported and its files are not judged; a shell script named `php` is ignored. |
+| Running processes | A process whose file is unchanged is judged; a process whose file was replaced or deleted gives CHECK FAILED; non-PHP libraries are ignored; with no `lsof`, the check says processes were not inspected. |
+| Whole run | Empty disk gives PASS with exit 0 (as root); exit codes 1, 2, 64 and 69; an unreadable folder gives CHECK FAILED with Full Disk Access advice, never "nothing found". |
+
+### How old-bash support was tested without a Mac
+
+macOS includes bash 3.2, which lacks some features of newer bash. The suite
+was run twice on Linux: once with bash 5, and once with a real bash 3.2.57
+taken from the official `bash:3.2` Docker image, the same bash version macOS
+includes. Both runs passed all 28 tests. To repeat the 3.2 run:
+
+```bash
+PHP2SHELL_TEST_SHELL=/path/to/bash-3.2 /path/to/bash-3.2 tests/hostcheck-macos-tests.sh
+```
+
+Breaking the 8.3 rule on purpose made 3 macOS tests fail, as expected.
 
 ## What the network scan tests do
 
@@ -97,6 +131,8 @@ These were tested by hand, because they need a live system:
 - The rpm code path on a real Red Hat or SUSE server, and the older Berkeley
   DB format used by Red Hat 7 and 8.
 - Windows WSL 2 and WSL 1.
+- The macOS host check on a real Mac: macOS's own `find`, `lsof`, `od` and
+  `grep`, and reading the version from real Mac PHP programs.
 - nmap versions other than 7.94. Older releases are imitated by
   `tests/old_nmap_helper.nse`, and every nmap function the script uses was
   checked against the nmap 7.80 source code.

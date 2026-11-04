@@ -49,6 +49,26 @@ what to do. Parts in `<angle brackets>` are filled in with real values.
 | Rootless container storage is not inspected. Run this checker inside each container. | A user's private container storage was found but not opened. | Check those containers separately. |
 | The filesystem walk was incomplete: `<count>` error(s), first: `<error>`. Fix access and re-run. | Some folders could not be read, so PHP could be hiding there. | Fix the access problem (usually: run as root). Run the check again. |
 
+## macOS host check (`php2shell-hostcheck-macos.sh`)
+
+The macOS check uses many of the same messages as the Linux check: "Upstream
+version is at or after the fixed release", "No PHP version string found",
+the branch messages, "Unpackaged build...", "Not run as root..." (on a Mac it
+says "Re-run with sudo"), and "The file reports PHP ... so the file is not
+the packaged one". These messages are its own:
+
+| Result | Message | What it means | What to do |
+|---|---|---|---|
+| PASS | No PHP program, module or process found on the inspected disks. | The search ran with sudo, had no errors, found no PHP, and left nothing unresolved. | Keep the output as your record. |
+| FAIL | Version precedes `<fix>`, and the Mac holds no changelog showing a backported fix (Homebrew records the version, not CVE fixes). Run: brew upgrade `<formula>`, then restart PHP and the web server. | Homebrew PHP older than the fix. | Run the `brew upgrade` command shown, restart, check again. |
+| FAIL | Version precedes `<fix>`, and the Mac holds no changelog showing a backported fix (MacPorts records the version, not CVE fixes). Run: sudo port selfupdate && sudo port upgrade `<port>`, then restart PHP and the web server. | MacPorts PHP older than the fix. | Run the `port` commands shown, restart, check again. |
+| FAIL | Version precedes `<fix>`, and the Mac holds no record of a backported fix for this copy bundled with `<app>`. Update `<app>` or switch it to a fixed PHP version, then restart it. | A PHP inside MAMP, XAMPP, Laravel Herd or another app is older than the fix. | Update the app, or choose a fixed PHP version in its settings. |
+| CHECK FAILED | The process uses a file that has since been replaced or deleted on disk, and macOS cannot show the running copy. Restart the service and re-run. | PHP was updated or removed while it was running. | Restart the service and check again. |
+| CHECK FAILED | Running processes could not be inspected: lsof is not available. Only files on disk were checked. | The `lsof` tool is missing. | Run on a standard macOS installation. |
+| CHECK FAILED | Linux virtual-machine or container storage is not inspected. Run php2shell-hostcheck.sh inside each container. | Docker Desktop, Colima, OrbStack, Lima or Podman storage was found. | Run the Linux check inside each container. |
+| CHECK FAILED | The disk search was incomplete: `<count>` folder(s) could not be read, first: `<error>`. Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo. | macOS hid some folders. | Give the terminal app Full Disk Access and run again with `sudo`. |
+| CHECK FAILED | Required tools are missing: `<tools>`. Re-run on a standard macOS installation. | A standard tool is missing. | Run on a standard macOS installation. |
+
 ## Network scan (`php2shell-detect.nse`)
 
 ### BANNER BELOW FIX

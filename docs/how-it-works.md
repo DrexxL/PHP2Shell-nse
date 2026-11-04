@@ -217,6 +217,13 @@ Could the version be read?
 rpm tool, or a package whose version cannot be read. The [results reference](results-reference.md) lists every
 message.)
 
+### On a Mac
+
+The macOS host check follows the same steps, with two differences. It finds
+running programs with `lsof`, because macOS has no `/proc`. And it decides
+by version alone, because Homebrew, MacPorts and app bundles keep no
+changelog of CVE fixes on the Mac. See the [macOS guide](macos-guide.md).
+
 ## 6. Why "CHECK FAILED" is a good answer
 
 It can feel unhelpful when a tool says "I could not tell". But a wrong

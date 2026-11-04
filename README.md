@@ -34,14 +34,15 @@ These tools do **not** check a third, separate bug, CVE-2026-115560.
 
 ## Two tools, two jobs
 
-This repository has two tools. They answer different questions.
+This repository has two kinds of tools. They answer different questions.
 
 | Tool | Where you run it | The question it answers | Possible results |
 |---|---|---|---|
 | `php2shell-detect.nse` | One computer that scans your network | "Which websites *say* they run an old PHP?" | BANNER BELOW FIX, BANNER AT OR ABOVE FIX, CHECK FAILED |
-| `php2shell-hostcheck.sh` | On each server, as the administrator (root) | "Is the PHP on this server actually fixed?" | PASS, FAIL, CHECK FAILED |
+| `php2shell-hostcheck.sh` | On each Linux server, as the administrator (root) | "Is the PHP on this server actually fixed?" | PASS, FAIL, CHECK FAILED |
+| `php2shell-hostcheck-macos.sh` | On each Mac, with `sudo` | "Is the PHP on this Mac actually fixed?" | PASS, FAIL, CHECK FAILED |
 
-Both tools work with no internet connection. Neither tool attacks anything.
+All the tools work with no internet connection. None of them attacks anything.
 
 ### Why the network scan cannot give the final answer
 
@@ -149,6 +150,7 @@ during a maintenance window.
 |---|---|
 | [How the tools work](docs/how-it-works.md) | understand the ideas: versions, backports, banners and how each tool decides |
 | [Host check guide](docs/host-check-guide.md) | run the host check on a server, a disk image or a container, and read its output |
+| [macOS host check guide](docs/macos-guide.md) | check the PHP on a Mac: Homebrew, MacPorts, MAMP, XAMPP, Laravel Herd |
 | [Network scan guide](docs/network-scan-guide.md) | run the network scan with nmap and read its output |
 | [Results reference](docs/results-reference.md) | look up any message either tool prints, and what to do about it |
 | [Notes for auditors and investigators](docs/for-auditors-and-investigators.md) | know what each result proves, and keep a clean record |
@@ -163,9 +165,14 @@ during a maintenance window.
 
 Read these before you rely on a result.
 
-- **Linux only.** The host check runs on Linux, including Windows' WSL 2.
-  It needs bash 4 and the standard GNU tools. It cannot check PHP for
+- **Linux and macOS.** The Linux host check runs on Linux, including
+  Windows' WSL 2, and needs bash 4 and the standard GNU tools. The macOS host
+  check runs with the bash 3.2 that macOS includes. Neither can check PHP for
   Windows. See [Supported systems](docs/host-check-guide.md#supported-systems).
+- **The macOS check has not yet run on a real Mac.** It was tested on Linux
+  with a real bash 3.2.57 (the version macOS includes), fake Mac disks and a
+  fake `lsof`. Check its first results by hand. See the
+  [macOS guide](docs/macos-guide.md#limits).
 - **rpm tested with built packages, not a real Red Hat host.** The rpm part
   was tested with real rpm packages and databases (rpm 4.18), in both
   standard database locations. It has not yet run on an actual Red Hat,

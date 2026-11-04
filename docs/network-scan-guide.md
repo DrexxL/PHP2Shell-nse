@@ -9,7 +9,7 @@ first. Then confirm each server with the [host check](host-check-guide.md).
 
 | Need | Why |
 |---|---|
-| nmap (tested with 7.94) | The script runs inside nmap. |
+| nmap (tested with 7.94) | The script runs inside nmap. On a Mac, install it with `brew install nmap` or from nmap.org. |
 | A computer that can reach your web servers | The script connects to them. |
 | Permission to scan those servers | Scan only systems you are responsible for. |
 

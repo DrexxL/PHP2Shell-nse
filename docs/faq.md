@@ -62,6 +62,24 @@ claiming that it found nothing.
 Yes. Export or extract it into a folder, then run the host check with
 `--root`. See the [host check guide](host-check-guide.md#check-containers).
 
+### Does it work on a Mac?
+
+Yes, with the macOS host check, `php2shell-hostcheck-macos.sh`. It checks
+PHP from Homebrew, MacPorts, MAMP, XAMPP, Laravel Herd and anywhere else on
+the disk, using the bash and tools that macOS includes. It has not yet run on
+a real Mac. See the [macOS guide](macos-guide.md).
+
+The network scan also works on a Mac: install nmap (for example with
+`brew install nmap`) and run it as shown in the
+[network scan guide](network-scan-guide.md).
+
+### Why does the macOS check give FAIL where the Linux check might give PASS?
+
+On Linux, a distribution can copy a fix into an older version and record it
+in a changelog that the check reads. On a Mac, Homebrew, MacPorts and app
+bundles record the version, but no changelog of CVE fixes. So on a Mac, a
+version older than the fix has no record of a fix, and the result is FAIL.
+
 ### Does it work on Windows?
 
 - **The network scan** works on any computer that runs nmap, including
