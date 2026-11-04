@@ -50,15 +50,6 @@ All notable changes to this project. Dates are in UTC.
 - Tests: adversarial cases added; the suite now passes with and without root
   (at that time 46 as root, 44 without; see [Testing](docs/testing.md) for current counts).
 
-### Metasploit module (new)
-
-- `metasploit/php2shell_banner.rb`: Metasploit auxiliary scanner that ports
-  the nmap script's banner triage, with the same results and wording.
-  Findings are stored as notes, never as vulnerabilities.
-- Self-checking tests in `tests/msf-tests.sh` (now 22 tests), run with the
-  official Metasploit Docker image.
-- New guide: `docs/metasploit-guide.md`.
-
 ### macOS host check 1.0 (new)
 
 - `php2shell-hostcheck-macos.sh`: checks PHP on a Mac (Homebrew, MacPorts,

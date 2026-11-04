@@ -80,11 +80,3 @@ jobs:
             live.txt
           if-no-files-found: warn
 
-  metasploit:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Get the official Metasploit image
-        run: docker pull metasploitframework/metasploit-framework
-      - name: Metasploit module tests
-        run: bash tests/msf-tests.sh
