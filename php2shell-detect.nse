@@ -5,6 +5,7 @@ local http      = require "http"
 local shortport = require "shortport"
 local stdnse    = require "stdnse"
 local table     = require "table"
+local url       = require "url"
 
 description = [[
 Checks web servers for signs of PHP2Shell (CVE-2026-109618, CVE-2026-109619),
@@ -178,13 +179,16 @@ local function classify(v, suffix)
 end
 
 -- Collect every PHP version string in one response.
-local function extract(resp, path, evidence, versions)
-  local status = resp and resp.status or "no response"
+local function extract(resp, path, evidence, versions, seen)
+  local got    = (resp ~= nil and resp.status ~= nil)
+  local status = got and resp.status or "no response"
+  if got and seen.ssl == nil then seen.ssl = resp.ssl end
   local line   = ("GET %s -> %s"):format(path, tostring(status))
   if resp and resp.header and resp.header.location then
     line = line .. " (redirect to " .. resp.header.location .. ", not followed)"
   end
   local found = {}
+  local partial_before = #seen.partial
 
   if resp and resp.header then
     for _, h in ipairs({"x-powered-by", "server"}) do
@@ -192,6 +196,13 @@ local function extract(resp, path, evidence, versions)
       if val then
         for v, suf in val:gmatch("PHP/(%d+%.%d+%.%d+)([%w~%.%+%-]*)") do
           found[#found + 1] = { v, suf, ("%s: %s"):format(h, val) }
+        end
+        if #found == 0 then
+          local part = val:match("PHP/(%d+%.?%d*)")
+          if part then
+            seen.partial[#seen.partial + 1] = part
+            evidence[#evidence + 1] = line .. (", %s: %s (partial version only)"):format(h, val)
+          end
         end
       end
     end
@@ -203,7 +214,7 @@ local function extract(resp, path, evidence, versions)
     if v then found[#found + 1] = { v, suf, "phpinfo() heading: PHP Version " .. v .. suf } end
   end
 
-  if #found == 0 then
+  if #found == 0 and #seen.partial == partial_before then
     evidence[#evidence + 1] = line .. ", no PHP version disclosed"
   end
   for _, f in ipairs(found) do
@@ -214,7 +225,23 @@ local function extract(resp, path, evidence, versions)
       versions[#versions + 1] = key
     end
   end
-  return resp ~= nil
+  return got
+end
+
+-- The Host header nmap's http library sends (same rules as http.lua).
+local function host_header_sent(host, port, vhost)
+  if vhost then return vhost end
+  local global = stdnse.get_script_args("http.host")
+  if global then return global end
+  local name   = url.ascii_hostname(host)
+  local scheme = url.get_default_scheme(port)
+  if scheme then
+    local ssl_port = shortport.ssl(host, port)
+    if (ssl_port and scheme == "https") or (not ssl_port and scheme == "http") then
+      return name
+    end
+  end
+  return name .. ":" .. port.number
 end
 
 action = function(host, port)
@@ -233,20 +260,27 @@ action = function(host, port)
   local vhost = get_arg("vhost")
   if vhost then opts.header = { Host = vhost } end
 
-  local scheme = shortport.ssl(host, port) and "https" or "http"
   local out = stdnse.output_table()
 
   local evidence, versions, any_response = {}, {}, false
+  local seen = { partial = {} }
   for _, path in ipairs(paths) do
-    if extract(http.get(host, port, path, opts), path, evidence, versions) then
+    if extract(http.get(host, port, path, opts), path, evidence, versions, seen) then
       any_response = true
     end
   end
+  -- Report the transport actually used, not a guess from the port number.
+  local scheme = (seen.ssl == true and "https") or (seen.ssl == false and "http") or "unknown"
 
   if not any_response then
     out.result = FAILED
     out.reason = "No HTTP response was received on any requested path."
     out.action = "Verify the service manually or on the host."
+  elseif #versions == 0 and #seen.partial > 0 then
+    out.result = FAILED
+    out.reason = "Only a partial PHP version was disclosed (" .. table.concat(seen.partial, ", ")
+              .. "), which cannot be compared with a fixed release."
+    out.action = "Authenticated host-side package and runtime inspection is required."
   elseif #versions == 0 then
     out.result = FAILED
     out.reason = "No PHP version was disclosed (expose_php may be Off, PHP may be absent, "
@@ -267,7 +301,7 @@ action = function(host, port)
   end
 
   out.target = ("%s://%s:%d  Host: %s  SNI: %s"):format(
-    scheme, host.ip, port.number, vhost or stdnse.get_hostname(host),
+    scheme, host.ip, port.number, host_header_sent(host, port, vhost),
     (scheme == "https" and host.targetname) or "none")
   out.evidence   = evidence
   out.rules      = ("PHP security releases of 2026-10-21 (8.2.35, 8.3.36, 8.4.27, 8.5.12); "

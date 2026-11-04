@@ -74,6 +74,11 @@ changes (its "changelog") for the two CVE numbers.
 - **CHECK FAILED** means the tool could not find proof either way. It never
   guesses. Every CHECK FAILED line says what went wrong and what to do next.
 
+Before it trusts a changelog, the host check also makes sure the file really
+is the one the package installed. **Example:** if someone copies an old PHP
+program over a packaged one, the file's version number or checksum no longer
+matches the package record, so the result is CHECK FAILED, not PASS.
+
 **Example:** PHP 8.1 is older than the versions in PHP's official warning.
 Experts disagree about whether 8.1 has these bugs. So the host check reports
 CHECK FAILED for 8.1, not FAIL or PASS, and tells you to upgrade.
@@ -103,7 +108,7 @@ sudo ./php2shell-hostcheck.sh --root /mnt/disk
 **Example output line:**
 
 ```
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|Package changelog records the fix for both CVE-2026-109618 and CVE-2026-109619.
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|Changelog /usr/share/doc/php8.3-common/changelog.Debian.gz records both CVE-2026-109618 and CVE-2026-109619, e.g. "- debian/patches/CVE-2026-109618_109619.patch: Avoid state corruption via ..."
 ```
 
 The run can take a minute, because the tool searches the whole disk. That
@@ -121,7 +126,8 @@ them.
    ```
 
 4. Keep `-sV` in the command. Without it, nmap can miss websites on unusual
-   ports.
+   ports. Nmap also skips some ports, such as 9100, during this step. Add
+   `--allports` to include them.
 5. Run the host check on every server that the scan lists. Run it on the
    other servers too, because a missing banner proves nothing.
 
@@ -136,6 +142,27 @@ Optional settings go after `--script-args`:
 The scan only asks for normal web pages and sends no attack. Even so, any
 web request can upset a badly broken application. If you are unsure, scan
 during a maintenance window.
+
+## Limits
+
+Read these before you rely on a result.
+
+- **Not tested on rpm systems.** The rpm part of the host check (Red Hat,
+  Rocky, SUSE) has not been tested yet. Check its results by hand the first
+  time.
+- **Container storage is not opened.** Docker, Podman, LXD, snap and similar
+  storage folders are listed as CHECK FAILED. Run the host check inside each
+  container, or use `--root` on each extracted image. Running containers are
+  checked through their processes.
+- **Root is needed.** Without root, some files and processes stay hidden, so
+  the run reports CHECK FAILED and never says "nothing found".
+- **Images stay sealed.** With `--root`, links inside the image are followed
+  only inside the image, so the checking computer's own files can never be
+  mistaken for the image's.
+- **A changelog is a record, not a test.** PASS from a changelog means the
+  package maker says the fix is included. The tools do not test the fix.
+- **Only nmap 7.94 was used for testing.** The script uses only functions
+  that also exist in nmap 7.80, but it has not been run there.
 
 ## License
 
