@@ -43,7 +43,7 @@ like a Linux program and contains a version string, for example
 | Version rules | Below the fix is FAIL; the fix and newer is PASS; RC and dev builds of the fix count as older; branches 8.1, 5.6 and 8.6 are CHECK FAILED. |
 | Package records | A backport in the changelog gives PASS; a changelog without the CVEs gives FAIL; one CVE only, a missing changelog, or "NOT fixed" wording gives CHECK FAILED. |
 | Tampering | A file whose version or checksum differs from its package is never PASS. |
-| Changelog wording | Twelve misleading items give CHECK FAILED (for example "Investigate exposure to ...", "Fixes ... will be included in the next upload", "Patch for ... dropped"); look-alike IDs such as CVE-2026-1096180 do not count; Ubuntu's real layout (fix stated at the top, CVE IDs 300 lines later, "pending" inside a file name) and four Debian layouts give PASS; a bare "New upstream version" mention is decided by the version. |
+| Changelog wording | Fourteen misleading items give CHECK FAILED, including a newer "Undo the ... changes" or "Back out the ... patches" item above an older fix (for example "Investigate exposure to ...", "Fixes ... will be included in the next upload", "Patch for ... dropped"); look-alike IDs such as CVE-2026-1096180 do not count; Ubuntu's real layout (fix stated at the top, CVE IDs 300 lines later, "pending" inside a file name) and four Debian layouts give PASS; a bare "New upstream version" mention is decided by the version. |
 | Unusual files | Non-executable PHP modules with unusual names are found; a PHP under a path longer than the system allows gives "walk was incomplete", never "nothing found". |
 | Adversarial | A renamed PHP binary (`/opt/app/worker`) is found; a symlinked dpkg `.list` pointing outside the image is ignored; file names containing `\|` and a line break are percent-encoded, giving exactly 2 rows of 8 fields. |
 | Image safety | Links inside an image stay inside it; a link pointing outside is not followed. |
@@ -73,7 +73,7 @@ processes. The suite runs on a Mac or on Linux.
 macOS includes bash 3.2, which lacks some features of newer bash. The suite
 was run twice on Linux: once with bash 5, and once with a real bash 3.2.57
 taken from the official `bash:3.2` Docker image, the same bash version macOS
-includes. Both runs passed all 37 tests. To repeat the 3.2 run:
+includes. Both runs passed all 38 tests. To repeat the 3.2 run:
 
 ```bash
 PHP2SHELL_TEST_SHELL=/path/to/bash-3.2 /path/to/bash-3.2 tests/hostcheck-macos-tests.sh
@@ -128,8 +128,8 @@ results measured on 4 November 2026:
 
 | Suite | Tests | Deliberate break | Tests that then failed |
 |---|---|---|---|
-| Linux host check | 65 (63 without root) | 8.2 fix set to 8.2.5 | 8 |
-| macOS host check | 37 (35 without root) | 8.3 fix set to 8.3.5 | 3 |
+| Linux host check | 67 (65 without root) | 8.2 fix set to 8.2.5 | 8 |
+| macOS host check | 38 (36 without root) | 8.3 fix set to 8.3.5 | 3 |
 | Network scan | 15 | 8.2 fix set to 8.2.5 | 6 |
 | Metasploit module | 22 | 8.2 fix set to 8.2.5 | 3 |
 

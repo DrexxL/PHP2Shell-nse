@@ -149,8 +149,12 @@ To keep the search fast, the version text is looked for in every file larger
 than 1 MB whose first bytes mark it as a program or library (ELF on Linux,
 Mach-O on a Mac), whatever its name or permissions; every PHP build is much
 larger than 1 MB. On a live system, every file loaded by a running program is
-checked the same way. **Limit:** a PHP build that has been packed, encrypted
-or edited so that its version text is gone is found only by its name.
+checked the same way, except that on a Mac, Apple's own system files under
+`/System` and `/usr/lib` are not searched for the text. **Limits:** a PHP
+build that has been packed, encrypted or edited so that its version text is
+gone is found only by its name. And a program that is not PHP but happens to
+contain the text `X-Powered-By: PHP/<version>` would be judged as if it were
+PHP.
 
 ### Step 2: Read the version without running anything
 
@@ -209,7 +213,8 @@ A CVE counts as fixed only if one item passes all three of these tests:
    unfixed, not affected, does not fix, remains vulnerable, still vulnerable,
    investigate, pending, revert, to be fixed, todo, no fix, will, next, later,
    future, defer, postpone, dropped, removed, partial, incomplete, disabled,
-   without, tbd, wontfix, won't fix, skip, ignore. They count only as whole
+   without, tbd, wontfix, won't fix, skip, ignore, back out, undo, not
+   shipped, planned. They count only as whole
    words, so a file name such as `oom_pending_at_shutdown.phpt` does not
    count as "pending".
 
@@ -230,6 +235,10 @@ What happens when the changelog names the CVEs but no item passes:
 
 - If an item that names a CVE has a word from test 3, the result is CHECK
   FAILED, whatever the version.
+- If any other item names a CVE without passing tests 1 and 2, for example a
+  newer "Undo the CVE-2026-109618 changes", there is no changelog PASS, even
+  if an older item states the fix. That item is the one quoted, and the
+  version decides.
 - If the CVEs are only mentioned, as in "New upstream version 8.3.36
   (CVE-2026-109618, CVE-2026-109619)", the version decides: PASS at or after
   the fix, CHECK FAILED below it.

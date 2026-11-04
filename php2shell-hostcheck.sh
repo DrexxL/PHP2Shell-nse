@@ -336,7 +336,9 @@ changelog_scan() {
   #             ("- CVE-ID", "- CVE-ID: ..."), and
   #   no DENY   no word in the item denies, limits or postpones a fix.
   # An item with a DENY word that names the CVE makes it DENIED. Any other
-  # mention makes it UNCLEAR, which then leaves the decision to the version.
+  # mention makes it UNCLEAR. An UNCLEAR item anywhere (for example a newer
+  # "Undo the CVE changes") blocks a changelog PASS and leaves the decision
+  # to the version, and it is the item quoted.
   local res
   res=$(awk -v A="$CVE_A" -v B="$CVE_B" '
     function has_id(s, id,   p, rest, before, after) {
@@ -385,7 +387,7 @@ changelog_scan() {
       LEADRE = "^(security (update|fix(es)?)|fix(es|ed)?|backport(s|ed)?|resolve[sd]?|patch(es|ed)?|appl(y|ies|ied)|address(es|ed)?)([^a-z_]|$)"
       CVEFIRST = "^" LIST "[ \t]*:"
       CVELINE = "^[ \t]*[-*+][ \t]*" LIST "[ \t]*(:|[(]|$)"
-      DENY = "(^|[ \t\n(:;,\"])(not (yet |currently )?(fix|fixing|fixed|included|addressed|applied|backported|patched|resolved|complete|covered|handled)|unfixed|not affected|does not fix|doesn.t fix|remains? vulnerable|still vulnerable|investigat[a-z]*|pending|revert[a-z]*|to be fixed|todo|no fix|will|next|later|future|defer[a-z]*|postpone[a-z]*|dropped|removed|partial(ly)?|incomplete|disabled|without|tbd|wontfix|won.t fix|skip[a-z]*|ignor[a-z]*)([^a-z_]|$)"
+      DENY = "(^|[ \t\n(:;,\"])(not (yet |currently )?(fix|fixing|fixed|included|addressed|applied|backported|patched|resolved|complete|covered|handled)|unfixed|not affected|does not fix|doesn.t fix|remains? vulnerable|still vulnerable|investigat[a-z]*|pending|revert[a-z]*|to be fixed|todo|no fix|will|next|later|future|defer[a-z]*|postpone[a-z]*|dropped|removed|partial(ly)?|incomplete|disabled|without|tbd|wontfix|won.t fix|skip[a-z]*|ignor[a-z]*|back(ed)? out|undo|undid|undone|not shipped|planned)([^a-z_]|$)"
     }
     /^[^ \t*-]/ || /^ -- / || /^\* / { flush(); next }
     /^  \* / || /^- /                { flush(); nl = 1; L[1] = $0; whole = $0; next }
@@ -393,7 +395,7 @@ changelog_scan() {
     END {
       flush()
       ids = (ok[A] ? A : "") ((ok[A] && ok[B]) ? " " : "") (ok[B] ? B : "")
-      q = denied ? dq : ((ok[A] && ok[B]) ? gq : (unclear ? uq : gq))
+      q = denied ? dq : (unclear ? uq : gq)
       print ids "\037" denied "\037" unclear "\037" q
     }' <<<"$text")
   IFS=$'\037' read -r CL_IDS CL_DENIED CL_UNCLEAR CL_QUOTE <<<"$res"
@@ -492,7 +494,7 @@ evaluate() {
       "The changelog ($CL_SRC) names the CVEs with wording that may deny, limit or postpone a fix: \"$CL_QUOTE\". Read the entry."
     return
   fi
-  if [[ $CL_STATE == FOUND && $CL_IDS == *"$CVE_A"* && $CL_IDS == *"$CVE_B"* ]]; then
+  if [[ $CL_STATE == FOUND && -z $CL_UNCLEAR && $CL_IDS == *"$CVE_A"* && $CL_IDS == *"$CVE_B"* ]]; then
     emit PASS "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
       "The changelog ($CL_SRC) records a fix for both $CVE_A and $CVE_B: \"$CL_QUOTE\". Confirm the quoted item."
     return
@@ -518,7 +520,7 @@ evaluate() {
     return
   fi
 
-  if [[ $CL_STATE == FOUND && -n $CL_IDS ]]; then
+  if [[ $CL_STATE == FOUND && -n $CL_IDS && -z $CL_UNCLEAR ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
       "Version precedes $fixed and the changelog ($CL_SRC) records only $CL_IDS. Check the vendor advisory for the other CVE."
   elif [[ $CL_STATE == FOUND ]]; then

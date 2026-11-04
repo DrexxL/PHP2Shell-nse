@@ -150,6 +150,18 @@ case $out in
 esac
 rm -rf "$I"
 
+# Control characters and a literal "%41" in a folder name: the file is read
+# and judged correctly (FAIL), and the name is shown encoded, exactly once.
+I=$T/ctrlnames
+macho "$I" "/opt/x$(printf '\033')[1Ay$(printf '\t')z/php" 8.2.10
+macho "$I" "/opt/p%41q/php" 8.2.10
+out=$("$SH" "$CHECK" --root "$I" 2>/dev/null)
+case $out in
+  *"|FAIL|cli|/opt/x%1B[1Ay%09z/php|"*"|FAIL|cli|/opt/p%2541q/php|"*|*"|FAIL|cli|/opt/p%2541q/php|"*"|FAIL|cli|/opt/x%1B[1Ay%09z/php|"*)
+    ok "control characters and '%' in names are encoded once and judged" ;;
+  *) bad "control characters and '%' in names" "$(echo "$out" | grep -v '^#' | cut -d'|' -f2,4 | tr '\n' ' ')" ;;
+esac
+
 # --------------------------------------------------------------- whole run
 I=$T/empty; mkdir -p "$I/usr/local/bin"
 if [ "$(id -u)" -eq 0 ]; then

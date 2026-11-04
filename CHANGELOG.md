@@ -4,6 +4,21 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host checks, after the re-audit of a49b8f1
+
+The re-audit still reported open findings (verdict: not satisfied). These
+fixes were tested but, by the maintainer's choice, not re-audited:
+
+- Changelog: an item that names a CVE without stating a fix that covers it
+  (for example a newer "Undo the CVE changes") now blocks a changelog PASS,
+  and is the item quoted. "back out", "undo", "not shipped" and "planned"
+  were added to the deny words. (False PASS removed.)
+- macOS: file names with control characters are decoded correctly again, so
+  the right file is read. (A true FAIL was hidden before.)
+- AI-ASSISTANCE.md no longer says the work passed an audit.
+- Documented limits: a non-PHP program that contains PHP's version text is
+  judged as PHP; on a Mac, Apple's system files are not searched for it.
+
 ### Host checks, after the Ralph Wiggum audit of 5d596ed
 
 - Changelog rule: a CVE counts as fixed only in an item that opens with a fix

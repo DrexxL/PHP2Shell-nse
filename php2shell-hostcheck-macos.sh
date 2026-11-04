@@ -122,8 +122,8 @@ NFAIL=0; NCHK=0; NPASS=0
 
 # esc TEXT: percent-encode the characters that could break the record:
 # "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A, and every
-# other control character (bytes 1-31 and 127) as %XX. dec reverses the four
-# that the script itself needs to read back. Decode output with any URL decoder.
+# other control character (bytes 1-31 and 127) as %XX. dec reverses all of
+# them. Decode output with any URL decoder.
 CTRL_CHARS=(); CTRL_CODES=()
 for _c in 1 2 3 4 5 6 7 8 9 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 127; do
   CTRL_CHARS+=("$(printf "\\$(printf '%03o' "$_c")")"); CTRL_CODES+=("$(printf '%%%02X' "$_c")")
@@ -141,8 +141,16 @@ esc() {
   printf '%s' "$t"
 }
 dec() {
-  local t=${1//%0A/$'\n'}
-  t=${t//%0D/$'\r'}; t=${t//%7C/|}; t=${t//%25/%}
+  # Reverse everything esc() encodes. "%25" (the percent sign itself) comes
+  # last, so "%251B" correctly becomes "%1B" and not the ESC character.
+  local t=${1//%0A/$'\n'} i
+  t=${t//%0D/$'\r'}; t=${t//%7C/|}
+  i=0
+  while [ $i -lt ${#CTRL_CHARS[@]} ]; do
+    t=${t//"${CTRL_CODES[i]}"/${CTRL_CHARS[i]}}
+    i=$((i + 1))
+  done
+  t=${t//%25/%}
   printf '%s' "$t"
 }
 

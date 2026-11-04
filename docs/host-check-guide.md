@@ -199,5 +199,6 @@ reports the running copy as "replaced or deleted on disk".
   quoted item to confirm it.
 - Renamed PHP is found by the version text inside every program or library
   over 1 MB. A PHP build edited so that its version text is gone is found only
-  by its name.
+  by its name. A program that is not PHP but contains PHP's version text would
+  be judged as PHP.
   The tool does not test the fix itself.

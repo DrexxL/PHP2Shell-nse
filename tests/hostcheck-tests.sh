@@ -133,6 +133,18 @@ cl_case "Debian 'Backport fixes for:' list -> PASS" 8.3.6 "  * Backport fixes fo
     - $B: stale request state" PASS
 cl_case "Debian lead wrapped over two lines -> PASS" 8.3.6 "  * Fix $A and
     $B: remote code execution" PASS
+# A newer item that undoes the fix must stop a changelog PASS, and be quoted.
+cl_case "newer 'Undo the ... changes' item stops a changelog PASS" 8.3.6 "php8.3 (8.3.6-3) unstable; urgency=medium
+
+  * Undo the $A and $B changes; they broke opcache.
+
+ -- M <m@example.org>  Wed, 28 Oct 2026 10:00:00 +0000
+
+php8.3 (8.3.6-2) unstable; urgency=medium
+
+  * SECURITY UPDATE: fix $A and $B" "CHECK FAILED" "Undo the"
+cl_case "newer 'Back out the ... patches' item stops a changelog PASS" 8.3.6 "  * Back out the $A and $B patches.
+  * SECURITY UPDATE: fix $A and $B" "CHECK FAILED" "Back out"
 # A bare mention leaves the decision to the version.
 cl_case "bare mention, version at fix -> PASS by version" 8.3.36 "  * New upstream version 8.3.36 ($A, $B)" PASS "at or after the fixed release"
 cl_case "bare mention, version below fix -> CHECK FAILED" 8.3.6 "  * New upstream version 8.3.6 ($A, $B)" "CHECK FAILED" "without clearly stating a fix"

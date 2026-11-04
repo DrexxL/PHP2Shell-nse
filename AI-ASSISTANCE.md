@@ -23,7 +23,9 @@ the tool that wrote it:
   sure the tests can fail. See [Testing](docs/testing.md).
 - **Independent audits.** Separate AI auditor sessions, which did not write
   the code, reviewed the work against the maintainer's directives and ran
-  their own tests. The work was revised until an audit passed it.
+  their own tests. Their findings were fixed and tested. The latest audit
+  (4 November 2026) still reported open findings; the fixes for them were
+  tested but not re-audited. See [CHANGELOG.md](CHANGELOG.md).
 - **External reviews.** The two reviews listed above found real problems,
   which were fixed and then tested.
 - **Automatic tests on GitHub.** The workflow in `.github/workflows/tests.yml`
@@ -39,5 +41,5 @@ result.
 ## In the commit history
 
 Early commits end with a `Co-Authored-By: Claude ...` line and a
-`Claude-Session` link. Later commits do not: from 4 November 2026, AI help is
-recorded on this page instead.
+`Claude-Session` link. Later commits do not: from commit `bcd74db` on, AI help is recorded on this
+page instead.
