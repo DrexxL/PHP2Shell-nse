@@ -40,6 +40,7 @@ This repository has two kinds of tools. They answer different questions.
 | Tool | Where you run it | The question it answers | Possible results |
 |---|---|---|---|
 | `php2shell-detect.nse` | One computer that scans your network, with nmap | "Which websites *say* they run an old PHP?" | BANNER BELOW FIX, BANNER AT OR ABOVE FIX, CHECK FAILED |
+| `metasploit/php2shell_banner.rb` | The same, inside Metasploit | The same question, with the same answers | The same three results |
 | `php2shell-hostcheck.sh` | On each Linux server, as the administrator (root) | "Is the PHP on this server actually fixed?" | PASS, FAIL, CHECK FAILED |
 | `php2shell-hostcheck-macos.sh` | On each Mac, with `sudo` | "Is the PHP on this Mac actually fixed?" | PASS, FAIL, CHECK FAILED |
 
@@ -159,6 +160,7 @@ during a maintenance window.
 | [Host check guide](docs/host-check-guide.md) | run the host check on a server, a disk image or a container, and read its output |
 | [macOS host check guide](docs/macos-guide.md) | check the PHP on a Mac: Homebrew, MacPorts, MAMP, XAMPP, Laravel Herd |
 | [Network scan guide](docs/network-scan-guide.md) | run the network scan with nmap and read its output |
+| [Metasploit module guide](docs/metasploit-guide.md) | run the network scan inside Metasploit |
 | [Results reference](docs/results-reference.md) | look up any message either tool prints, and what to do about it |
 | [Notes for auditors and investigators](docs/for-auditors-and-investigators.md) | know what each result proves, and keep a clean record |
 | [Updating the rules](docs/updating-the-rules.md) | change the fixed versions when PHP publishes a new advisory |
