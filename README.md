@@ -143,6 +143,22 @@ The scan only asks for normal web pages and sends no attack. Even so, any
 web request can upset a badly broken application. If you are unsure, scan
 during a maintenance window.
 
+## Documentation
+
+| Page | Read it to... |
+|---|---|
+| [How the tools work](docs/how-it-works.md) | understand the ideas: versions, backports, banners and how each tool decides |
+| [Host check guide](docs/host-check-guide.md) | run the host check on a server, a disk image or a container, and read its output |
+| [Network scan guide](docs/network-scan-guide.md) | run the network scan with nmap and read its output |
+| [Results reference](docs/results-reference.md) | look up any message either tool prints, and what to do about it |
+| [Notes for auditors and investigators](docs/for-auditors-and-investigators.md) | know what each result proves, and keep a clean record |
+| [Updating the rules](docs/updating-the-rules.md) | change the fixed versions when PHP publishes a new advisory |
+| [Testing](docs/testing.md) | run the test suites and see what was tested |
+| [FAQ](docs/faq.md) | find quick answers to common questions |
+| [Glossary](docs/glossary.md) | look up a technical word |
+| [Changelog](CHANGELOG.md) | see what changed and when |
+| [Security policy](SECURITY.md) | report a problem with the tools |
+
 ## Limits
 
 Read these before you rely on a result.
