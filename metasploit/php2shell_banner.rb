@@ -162,9 +162,22 @@ class MetasploitModule < Msf::Auxiliary
     host_sent = nil
 
     paths_to_check.each do |path|
-      res = send_request_cgi({ 'method' => 'GET', 'uri' => path }, 20)
+      begin
+        res = send_request_cgi({ 'method' => 'GET', 'uri' => path }, 20)
+      rescue ::Rex::ConnectionError, ::Errno::ECONNRESET, ::Errno::ENOTCONN, ::Errno::EPIPE,
+             ::OpenSSL::SSL::SSLError, ::EOFError, ::Timeout::Error, ::IOError => e
+        # Every connection problem is recorded, so a host never disappears
+        # from the results.
+        evidence << "GET #{path} -> error: #{e.class}"
+        next
+      end
       unless res
         evidence << "GET #{path} -> no response"
+        next
+      end
+      # A reply that is not HTTP has no real status code.
+      unless res.proto.to_s =~ /\A\d\.\d\z/ && res.code.to_i.between?(100, 599)
+        evidence << "GET #{path} -> reply that is not HTTP"
         next
       end
       any_response = true
@@ -202,6 +215,7 @@ class MetasploitModule < Msf::Auxiliary
     if !any_response
       result = FAILED
       reason = 'No HTTP response was received on any requested path.'
+      reason += " (#{evidence.map { |e| e[/-> (.*)/, 1] }.uniq.join('; ')})" unless evidence.empty?
       action = 'Verify the service manually or on the host.'
     elsif versions.empty? && !partial.empty?
       result = FAILED

@@ -44,13 +44,16 @@ jobs:
         timeout-minutes: 10
         run: sudo /bin/bash tests/hostcheck-macos-tests.sh
       - name: Install Homebrew PHP
+        if: always()
         run: brew list php >/dev/null 2>&1 || brew install php
       - name: Live macOS host check of Homebrew's folder (--search)
+        if: always()
         timeout-minutes: 10
         run: |
           sudo /bin/bash ./php2shell-hostcheck-macos.sh --search "$(brew --prefix)" > quick.txt || true
           cat quick.txt
       - name: The version is read from a real Mac PHP program
+        if: always()
         run: |
           PHPBIN=$(cd "$(dirname "$(readlink -f "$(command -v php)")")" && pwd -P)/$(basename "$(readlink -f "$(command -v php)")")
           echo "Homebrew PHP: $PHPBIN, version $(php -r 'echo PHP_VERSION;')"
@@ -58,6 +61,7 @@ jobs:
           grep -F "|$PHPBIN|" quick.txt | grep -qF "|$(php -r 'echo PHP_VERSION;')|"
           ! grep -F "|$PHPBIN|" quick.txt | grep -q "No PHP version string"
       - name: Live macOS host check, full disk (timed, for the record)
+        if: always()
         timeout-minutes: 30
         continue-on-error: true
         run: |
@@ -66,3 +70,21 @@ jobs:
           echo "Full live check took $(( $(date +%s) - start )) seconds"
           grep -v '|PASS|' live.txt | head -40 || true
           tail -1 live.txt
+      - name: Keep the live outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-live-output
+          path: |
+            quick.txt
+            live.txt
+          if-no-files-found: warn
+
+  metasploit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the official Metasploit image
+        run: docker pull metasploitframework/metasploit-framework
+      - name: Metasploit module tests
+        run: bash tests/msf-tests.sh

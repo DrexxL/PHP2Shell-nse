@@ -96,12 +96,24 @@ HOST=$(cat /proc/sys/kernel/hostname 2>/dev/null || hostname)
 NFAIL=0; NCHK=0; NPASS=0
 
 # esc TEXT: percent-encode the characters that could break the record:
-# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A. Decode
+# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A, and every
+# other control character (bytes 1-31 and 127) as %XX. Decode
 # with any URL decoder, for example python3 -c "import sys,urllib.parse;
 # [print(urllib.parse.unquote(l), end='') for l in sys.stdin]".
+CTRL_CHARS=(); CTRL_CODES=()
+for _c in 1 2 3 4 5 6 7 8 9 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 127; do
+  CTRL_CHARS+=("$(printf "\\$(printf '%03o' "$_c")")"); CTRL_CODES+=("$(printf '%%%02X' "$_c")")
+done
 esc() {
-  local t=${1//%/%25}
+  local t=${1//%/%25} i
   t=${t//|/%7C}; t=${t//$'\r'/%0D}; t=${t//$'\n'/%0A}
+  # Other control characters (for example ESC, which can redraw a terminal)
+  # are encoded too, so the record shows exactly what is in a name.
+  i=0
+  while [ $i -lt ${#CTRL_CHARS[@]} ]; do
+    t=${t//"${CTRL_CHARS[i]}"/${CTRL_CODES[i]}}
+    i=$((i + 1))
+  done
   printf '%s' "$t"
 }
 
@@ -157,6 +169,7 @@ sapi_of() {
   case ${1##*/} in
     php-fpm*) echo fpm-fcgi ;;
     php-cgi*) echo cgi-fcgi ;;
+    php|php[0-9]*) [[ $1 == */cgi-bin/* ]] && echo cgi-fcgi || echo cli ;;  # Debian puts php-cgi in /usr/lib/cgi-bin
     libphp*|mod_php*) echo apache2handler ;;
     phpdbg*)  echo phpdbg ;;
     php|php[0-9]*) echo cli ;;
@@ -194,6 +207,7 @@ safe_path() {
 
 dpkg_status_version() { # root pkg
   local st; st=$(safe_path "$1" /var/lib/dpkg/status) || return 1
+  [[ -f $st ]] || return 1   # regular files only: a planted pipe must not hang the check
   awk -v P="$2" '/^Package: /{m=($2==P)} m && /^Version: /{print $2; exit}' "$st" 2>/dev/null
 }
 
@@ -249,7 +263,7 @@ rpm_owner() {
 
 apk_owner() {
   local db; db=$(safe_path "$1" /lib/apk/db/installed) || return 1
-  [[ -r $db ]] || return 1
+  [[ -f $db && -r $db ]] || return 1
   awk -v want="${2#/}" '
     /^P:/ {pk = substr($0, 3)}  /^V:/ {v = substr($0, 3)}  /^F:/ {d = substr($0, 3)}
     /^R:/ { if (d "/" substr($0, 3) == want) { print "apk|" pk "|" v "|/lib/apk/db/installed"; found = 1; exit } }
@@ -263,7 +277,7 @@ file_matches_package() {
   local root=$1 mgr=$2 pkg=$3 p=$4 file=$5 sums want got
   [[ $mgr == dpkg ]] || return 2
   sums=$(safe_path "$root" "/var/lib/dpkg/info/$pkg.md5sums") || return 2
-  [[ -r $sums ]] || return 2
+  [[ -f $sums && -r $sums ]] || return 2
   want=$(awk -v a="${p#/}" -v b="usr$p" -v c="${p#/usr/}" '$2==a || $2==b || $2==c {print $1; exit}' "$sums")
   [[ -n $want ]] || return 2
   got=$(md5sum < "$file" 2>/dev/null | cut -d' ' -f1)
@@ -283,7 +297,7 @@ changelog_scan() {
           [[ -n $cand && $cand == "$pkgver" ]] || continue  # fallback only at the same version
         fi
         f=$(safe_path "$root" "/usr/share/doc/$d/changelog.Debian.gz") || continue
-        [[ -r $f ]] || continue
+        [[ -f $f && -r $f ]] || continue
         text=$(zcat "$f" 2>/dev/null) || continue
         CL_SRC=${f#"$root"}
         break
@@ -327,6 +341,10 @@ changelog_scan() {
       print ids "\037" unclear "\037" (unclear ? bad : good)
     }' <<<"$text")
   IFS=$'\037' read -r CL_IDS CL_NEG CL_QUOTE <<<"$res"
+  # The IDs appear in the text, but in no item that could be judged.
+  if [[ -z $CL_IDS && -z $CL_NEG ]]; then
+    CL_NEG=1; CL_QUOTE="the CVE IDs appear outside any changelog item"
+  fi
   CL_QUOTE=$(sed 's/^[[:space:]*-]*//' <<<"$CL_QUOTE" | cut -c1-140)
 }
 
@@ -362,6 +380,11 @@ evaluate() {
   fi
   ver=${full%%[!0-9.]*}; ver=${ver%.}; suffix=${full#"$ver"}
   branch=$(cut -d. -f1-2 <<<"$ver")
+  case $ver in *[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*|0[0-9]*|*.0[0-9]*)
+    emit "CHECK FAILED" "$sapi" "${show:-$p}" "$seen" "$full" "" \
+      "The version number $full is not in PHP's normal form, so it cannot be compared safely. Inspect the file."
+    return ;;
+  esac
 
   if [[ $root == /proc/* && ! -e $root$p ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "-" \

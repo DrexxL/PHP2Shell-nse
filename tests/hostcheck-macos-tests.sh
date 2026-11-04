@@ -144,9 +144,14 @@ fi
 [ $rc -eq 2 ] && ok "only CHECK FAILED -> exit 2" || bad "only CHECK FAILED -> exit 2" "exit $rc"
 "$SH" "$CHECK" --root / >/dev/null 2>&1; rc=$?
 [ $rc -eq 64 ] && ok "--root / is refused (exit 64)" || bad "--root / is refused" "exit $rc"
-sh "$CHECK" >/dev/null 2>&1; rc=$?
-if [ $rc -eq 69 ] || [ "$(readlink /bin/sh 2>/dev/null)" = bash ]; then ok "run with sh (not bash) -> exit 69, or sh is bash"
-else bad "run with sh (not bash) -> exit 69" "exit $rc"; fi
+# On macOS, /bin/sh runs bash, so "sh script" is a bash run there. The
+# exit-69 guard can only be tested where sh is not bash.
+if [ -n "$(sh -c 'echo ${BASH_VERSION:-}' 2>/dev/null)" ]; then
+  echo "skip  run with sh (not bash) -> exit 69 (sh is bash on this system)"
+else
+  sh "$CHECK" >/dev/null 2>&1; rc=$?
+  [ $rc -eq 69 ] && ok "run with sh (not bash) -> exit 69" || bad "run with sh (not bash) -> exit 69" "exit $rc"
+fi
 
 # --------------------------------------------------------------- running processes
 # A fake lsof reports three PHP processes: one current, one whose file was

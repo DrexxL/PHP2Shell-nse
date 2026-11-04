@@ -173,9 +173,14 @@ packaged one").
 
 The check asks `lsof` which programs are running and which libraries they
 have loaded. This is expected to find PHP-FPM, PHP's built-in web server,
-and PHP loaded into Apache (not yet tested on a real Mac). If a running program's file has been replaced or deleted since
-it started, the check reports CHECK FAILED and asks you to restart the
+and PHP loaded into Apache (not yet tested on a real Mac). If a running program's file has been replaced by a new file, or deleted,
+since it started, the check reports CHECK FAILED and asks you to restart the
 service. macOS does not let the check read the running copy itself.
+
+**Limit:** if the file was overwritten in place (so it keeps the same file
+number, or "inode"), the check cannot tell. It then judges the new file on
+disk, while the old program may still be running. After any PHP update,
+restart PHP and the web server before you check.
 
 ## After a FAIL
 
@@ -215,6 +220,6 @@ temporary folder could not be created.
 - **A changelog is not available on a Mac.** A Mac package that includes a
   backported fix without changing its version would be reported as FAIL.
 - **Apple's own PHP.** macOS 12 (Monterey) and later do not include PHP.
-  Older macOS versions included an Apple-built PHP 7, which the check
-  reports as CHECK FAILED (branch outside PHP's warning).
+  Older macOS versions included an Apple-built PHP 5 or PHP 7, which the
+  check reports as CHECK FAILED (branch outside PHP's warning).
 - The check covers CVE-2026-109618 and CVE-2026-109619 only.

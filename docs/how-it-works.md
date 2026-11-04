@@ -12,15 +12,19 @@ just for you.
 
 In October 2026, two serious bugs in PHP were made public:
 
+Published summaries of PHP's advisory (listed under
+[Sources](../README.md#sources)) describe them like this:
+
 | ID | What kind of bug |
 |---|---|
-| CVE-2026-109618 | Memory corruption: PHP can be tricked into writing data where it should not. |
-| CVE-2026-109619 | Stale request state: data left over from one visitor's request can be reused during the next visitor's request. |
+| CVE-2026-109618 | Memory corruption. |
+| CVE-2026-109619 | Stale request state: data left over from one request can be reused by a later request on the same PHP worker. |
 
-Together they are called **PHP2Shell**, because they can give an attacker a
-"shell": the power to run their own commands on the server. Attackers are
-already using them. The U.S. Cybersecurity and Infrastructure Security
-Agency (CISA) lists both in its catalog of known exploited bugs.
+Together they are called **PHP2Shell**. The same summaries describe both as
+remote code execution bugs: an attacker could gain a "shell", the power to
+run their own commands on the server. The U.S. Cybersecurity and
+Infrastructure Security Agency (CISA) lists both in its catalog of bugs that
+attackers are known to be using.
 
 PHP published fixed versions on 21 October 2026: 8.2.35, 8.3.36, 8.4.27 and
 8.5.12.

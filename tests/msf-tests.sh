@@ -37,9 +37,10 @@ sleep 1
   echo "set VERBOSE true"
   echo "set PATHS /app/"
   echo "set PROBE_INFO true"
-  for p in 19001 19002 19003 19004 19005 19006 19007 19008 19009 19010 19011 19099; do
+  for p in 19001 19002 19003 19004 19005 19006 19007 19008 19009 19010 19011 19012 19013 19099; do
     echo "set RPORT $p"; echo "run"
   done
+  echo "set SSL true"; echo "set RPORT 19004"; echo "run"; echo "set SSL false"
   echo "exit"
 } > "$W/test.rc"
 
@@ -64,10 +65,10 @@ expect() {
 }
 
 runs=$(grep -c "Auxiliary module execution completed" <<<"$OUT")
-if [[ $runs -eq 12 ]] && ! grep -qE "Failed to load|Unknown command|No results from search|Error:" <<<"$OUT"; then
-  PASSED=$((PASSED + 1)); echo "ok    module loads and runs 12 times"
+if [[ $runs -eq 15 ]] && ! grep -qE "Failed to load|Unknown command|No results from search|Error:" <<<"$OUT"; then
+  PASSED=$((PASSED + 1)); echo "ok    module loads and runs 15 times"
 else
-  FAILED=$((FAILED + 1)); echo "FAIL  module loads and runs 12 times (completed $runs)"
+  FAILED=$((FAILED + 1)); echo "FAIL  module loads and runs 15 times (completed $runs)"
 fi
 expect "version below fix"                19001 "BANNER BELOW FIX: Disclosed PHP 8.2.10 precedes the fixed release 8.2.35"
 expect "release candidate of fix"         19002 "BANNER BELOW FIX: Disclosed PHP 8.2.35RC1 is a pre-release"
@@ -84,6 +85,23 @@ expect "partial version is reported"      19010 "Only a partial PHP version was 
 expect "newer branch is not judged"       19011 "newer than the advisory's scope"
 expect "Host header recorded"             19001 "Host: 127.0.0.1:19001"
 expect "no response"                      19099 "No HTTP response was received on any requested path"
+expect "reply that is not HTTP"           19012 "CHECK FAILED: No HTTP response was received"
+# Depending on the Metasploit version, a non-HTTP reply is either dropped by
+# its HTTP client ("no response") or seen and marked as not HTTP. Never "200".
+if grep -F "127.0.0.1:19012 " <<<"$OUT" | grep -qE "GET / -> (no response|reply that is not HTTP)" &&
+   ! grep -F "127.0.0.1:19012 " <<<"$OUT" | grep -q "GET / -> 200"; then
+  PASSED=$((PASSED + 1)); echo "ok      ...is not logged as an HTTP status"
+else
+  FAILED=$((FAILED + 1)); echo "FAIL    ...is not logged as an HTTP status"
+fi
+expect "connection reset -> CHECK FAILED" 19013 "CHECK FAILED: No HTTP response was received"
+expect "  ...error is recorded"           19013 "error:"
+# SSL against a plain-HTTP port (19004): an SSL error, still a result.
+if grep -F "127.0.0.1:19004 " <<<"$OUT" | grep -q "CHECK FAILED: No HTTP response.*error: OpenSSL"; then
+  PASSED=$((PASSED + 1)); echo "ok    SSL error -> CHECK FAILED, not silence"
+else
+  FAILED=$((FAILED + 1)); echo "FAIL  SSL error -> CHECK FAILED, not silence"; grep -F "127.0.0.1:19004 " <<<"$OUT" | sed 's/^/      /'
+fi
 if grep -qiE "vulnerable|report_vuln" <<<"$(grep -F '127.0.0.1:' <<<"$OUT")"; then
   FAILED=$((FAILED + 1)); echo "FAIL  never says vulnerable"
 else

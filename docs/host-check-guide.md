@@ -106,7 +106,7 @@ The output has three parts:
 
 ```
 # php2shell-hostcheck 1.1 | rules 2026-11-04 | CVE-2026-109618 and CVE-2026-109619 | CVE-2026-115560 not covered
-# host web01 | checked 2026-11-04T06:32:04Z
+# host web01 | checked 2026-11-04T06:32:04Z | fields are percent-encoded (%25 %7C %0D %0A)
 host|result|sapi|path|seen|php_version|package|reason
 web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records a fix for both CVE-2026-109618 and CVE-2026-109619, e.g. "SECURITY UPDATE: Remote RCE via state corruption issue".
 # summary: 1 PASS, 0 FAIL, 0 CHECK FAILED

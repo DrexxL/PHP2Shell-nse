@@ -4,18 +4,19 @@ PHP2Shell script for use with nmap scanner; Safe, no aggressive vulnerability ch
 ## What is PHP2Shell?
 
 PHP is a programming language that runs many websites. In October 2026,
-researchers made public two serious bugs in PHP. Together they are called
-**PHP2Shell**:
+two serious bugs in PHP became public. Together they are called
+**PHP2Shell**. Published summaries of PHP's advisory describe them like
+this (see [Sources](#sources)):
 
-- **CVE-2026-109618**: a memory bug.
-- **CVE-2026-109619**: a bug where data left over from one web visitor's
-  request can be reused during the next visitor's request.
+- **CVE-2026-109618**: memory corruption.
+- **CVE-2026-109619**: data left over from one web visitor's request can be
+  reused during a later request on the same PHP worker.
 
 A "CVE" is an ID number that the security world gives each known bug, so
-everyone can talk about the same one. Both bugs can let an attacker run
-their own commands on the server. Attackers are already using them. That is
-why both appear in the U.S. government's list of known exploited bugs (the
-CISA KEV catalog).
+everyone can talk about the same one. The same summaries describe both as
+"remote code execution" bugs: an attacker could run their own commands on
+the server. Both appear in the U.S. government's list of bugs that attackers
+are known to be using (the CISA KEV catalog).
 
 PHP fixed the bugs on **21 October 2026**. These are the first fixed
 versions:
@@ -80,8 +81,10 @@ changes (its "changelog") for the two CVE numbers.
 
 Before it trusts a changelog, the host check also makes sure the file really
 is the one the package installed. **Example:** if someone copies an old PHP
-program over a packaged one, the file's version number or checksum no longer
-matches the package record, so the result is CHECK FAILED, not PASS.
+program over a packaged one, the file's version number no longer matches the
+package record, so the result is CHECK FAILED, not PASS. On Debian and Ubuntu,
+the file's checksum is compared too, so a copy with the same version number is
+also caught. On rpm and apk systems, only the version number is compared.
 
 **Example:** PHP 8.1 is older than the versions in PHP's official warning.
 Experts disagree about whether 8.1 has these bugs. So the host check reports
@@ -191,8 +194,10 @@ Read these before you rely on a result.
   the run reports CHECK FAILED, never says "nothing found", and never exits
   with status 0.
 - **Some filesystems are not searched.** Network drives, Windows drives under
-  WSL and folders shared into virtual machines are skipped. Each skipped
-  mount is listed in the output as `# not searched: ...`.
+  WSL and folders shared into virtual machines are skipped. The Linux check
+  lists each skipped mount in the output as `# not searched: ...`. The macOS
+  check skips network drives, `/System` and `/Volumes`, as its guide
+  describes, but does not list them one by one.
 - **Images stay sealed.** With `--root`, links inside the image are followed
   only inside the image, and package records are read only from regular
   files, so the checking computer's own files are not read in place of the
@@ -204,6 +209,27 @@ Read these before you rely on a result.
   uses was checked against the nmap 7.80 source code. An external review
   (Codex, November 2026) reports that the network scan tests also passed on
   nmap 7.80; that run was not repeated here.
+
+## Sources
+
+These are the sources for the facts about the bugs. Most are secondary: they
+summarise PHP's advisory. Check PHP's own security announcements and the CVE
+records before you quote them.
+
+- PHP 8.4.27 release notes (a security release for both CVEs):
+  https://github.com/php/php-src/releases/tag/php-8.4.27
+- CVE records: https://www.cve.org/CVERecord?id=CVE-2026-109618 and
+  https://www.cve.org/CVERecord?id=CVE-2026-109619
+- CISA Known Exploited Vulnerabilities catalog:
+  https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+- AWS security bulletin 2026-143 (affected and fixed versions):
+  https://aws.amazon.com/security/security-bulletins/2026-143-aws/
+- Canadian Centre for Cyber Security alert AL26-026:
+  https://www.cyber.gc.ca/en/alerts-advisories/al26-026-critical-vulnerabilities-impacting-php-cve-2026-109618-cve-2026-109619
+- SOCRadar summary (bug types, KEV date):
+  https://socradar.io/blog/php2shell-cve-2026-109618-cve-2026-109619/
+- Abstract Security summary (affected branches):
+  https://www.abstract.security/blog/php2shell-critical-php-rce-vulnerabilities-cve-2026-109618-and-cve-2026-109619
 
 ## License
 

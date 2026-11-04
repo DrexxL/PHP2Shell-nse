@@ -1,6 +1,6 @@
 # Copyright 2026 Drexx Laggui
 # SPDX-License-Identifier: Apache-2.0
-"""Fake web servers for nse-tests.sh. Listens on 127.0.0.1 only.
+"""Fake web servers for nse-tests.sh and msf-tests.sh. 127.0.0.1 only.
 
 Each port pretends to be a different web server. For every port, CASES
 maps a page path ("*" means any page) to (status, headers, body).
@@ -44,7 +44,38 @@ def handler(port):
     return H
 
 
+import socket
+import struct
+
+
+def raw_server(port, behaviour):
+    """A non-HTTP listener: 'text' replies with plain text, 'reset' resets."""
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", port))
+    srv.listen(16)
+
+    def loop():
+        while True:
+            conn, _ = srv.accept()
+            try:
+                conn.settimeout(2)
+                try:
+                    conn.recv(4096)
+                except OSError:
+                    pass
+                if behaviour == "text":
+                    conn.sendall(b"hello there\n")
+                else:  # reset: close with SO_LINGER 0, which sends a TCP RST
+                    conn.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0))
+            finally:
+                conn.close()
+    threading.Thread(target=loop, daemon=True).start()
+
+
 for p in CASES:
     server = ThreadingHTTPServer(("127.0.0.1", p), handler(p))
     threading.Thread(target=server.serve_forever, daemon=True).start()
+raw_server(19012, "text")    # replies with text that is not HTTP
+raw_server(19013, "reset")   # resets the connection after the request
 threading.Event().wait()

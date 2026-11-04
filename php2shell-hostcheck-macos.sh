@@ -121,11 +121,23 @@ HOST=$(hostname 2>/dev/null || echo unknown)
 NFAIL=0; NCHK=0; NPASS=0
 
 # esc TEXT: percent-encode the characters that could break the record:
-# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A.
-# dec reverses it. Decode output with any URL decoder.
+# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A, and every
+# other control character (bytes 1-31 and 127) as %XX. dec reverses the four
+# that the script itself needs to read back. Decode output with any URL decoder.
+CTRL_CHARS=(); CTRL_CODES=()
+for _c in 1 2 3 4 5 6 7 8 9 11 12 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 127; do
+  CTRL_CHARS+=("$(printf "\\$(printf '%03o' "$_c")")"); CTRL_CODES+=("$(printf '%%%02X' "$_c")")
+done
 esc() {
-  local t=${1//%/%25}
+  local t=${1//%/%25} i
   t=${t//|/%7C}; t=${t//$'\r'/%0D}; t=${t//$'\n'/%0A}
+  # Other control characters (for example ESC, which can redraw a terminal)
+  # are encoded too, so the record shows exactly what is in a name.
+  i=0
+  while [ $i -lt ${#CTRL_CHARS[@]} ]; do
+    t=${t//"${CTRL_CHARS[i]}"/${CTRL_CODES[i]}}
+    i=$((i + 1))
+  done
   printf '%s' "$t"
 }
 dec() {
@@ -273,6 +285,11 @@ evaluate() {
   fi
   ver=${full%%[!0-9.]*}; ver=${ver%.}; suffix=${full#"$ver"}
   branch=$(echo "$ver" | cut -d. -f1-2)
+  case $ver in *[0-9][0-9][0-9][0-9][0-9][0-9][0-9]*|0[0-9]*|*.0[0-9]*)
+    emit "CHECK FAILED" "$sapi" "${show:-$p}" "$seen" "$full" "" \
+      "The version number $full is not in PHP's normal form, so it cannot be compared safely. Inspect the file."
+    return ;;
+  esac
 
   o=$(origin "$p")
   IFS='|' read -r kind pkg pkgver detail <<EOF
