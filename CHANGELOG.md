@@ -4,6 +4,15 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Metasploit module (new)
+
+- `metasploit/php2shell_banner.rb`: Metasploit auxiliary scanner that ports
+  the nmap script's banner triage, with the same results and wording.
+  Findings are stored as notes, never as vulnerabilities.
+- Self-checking tests in `tests/msf-tests.sh` (17 tests), run with the
+  official Metasploit Docker image.
+- New guide: `docs/metasploit-guide.md`.
+
 ### macOS host check 1.0 (new)
 
 - `php2shell-hostcheck-macos.sh`: checks PHP on a Mac (Homebrew, MacPorts,

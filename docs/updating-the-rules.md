@@ -2,7 +2,7 @@
 
 Both tools carry a small, dated rule set: the first fixed version on each
 PHP branch. If PHP publishes a new advisory for these CVEs, for example a
-fix for a new branch, update both tools the same way.
+fix for a new branch, update every tool the same way.
 
 ## Where the rules are
 
@@ -10,6 +10,7 @@ fix for a new branch, update both tools the same way.
 |---|---|
 | `php2shell-hostcheck.sh` | `RULES_DATE="..."` and `declare -A FIXED=(...)` near the top |
 | `php2shell-hostcheck-macos.sh` | `RULES_DATE="..."` and the `fixed_for` function near the top |
+| `metasploit/php2shell_banner.rb` | `RULES_DATE` and the `FIXED` table near the top, plus the `rules` text in `run_host` |
 | `php2shell-detect.nse` | `local RULES_DATE = "..."` and the `FIXED` table near the top, plus the `rules` text line in `action` and the release list in `description` |
 
 **Example:** in the host check, the rules look like this:

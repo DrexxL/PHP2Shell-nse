@@ -76,6 +76,24 @@ PHP2SHELL_TEST_SHELL=/path/to/bash-3.2 /path/to/bash-3.2 tests/hostcheck-macos-t
 
 Breaking the 8.3 rule on purpose made 3 macOS tests fail, as expected.
 
+## What the Metasploit module tests do
+
+`msf-tests.sh` starts the same fake web servers as the nmap tests, runs the
+Metasploit module against each one, and checks each result. It uses
+`msfconsole` if it is installed, or else the official Docker image
+`metasploitframework/metasploit-framework`. All 17 tests passed with that
+image. Breaking the 8.2 rule on purpose made 4 tests fail, as expected.
+
+The tests cover the same cases as the nmap tests, plus a closed port ("No
+HTTP response"), the `Host` header sent, and a check that the module never
+prints the word "vulnerable".
+
+To run them:
+
+```bash
+./tests/msf-tests.sh
+```
+
 ## What the network scan tests do
 
 `nse-tests.sh` starts fake web servers on this computer only (127.0.0.1,
