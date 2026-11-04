@@ -131,6 +131,25 @@ case $out in
   *) bad "hostile file names are percent-encoded" "$out" ;;
 esac
 
+# A PHP module that is not executable and has an unusual name is found.
+I=$T/oddmods
+macho "$I" /opt/mods/phpmodule.bundle 8.2.10
+head -c 3000000 /dev/zero >> "$I/opt/mods/phpmodule.bundle"; chmod 644 "$I/opt/mods/phpmodule.bundle"
+expect "non-executable module with odd name is found" "$I" /opt/mods/phpmodule.bundle FAIL
+# A PHP under a path longer than the system allows is never dropped silently.
+I=$T/longpath; mkdir -p "$I/opt"
+part=$(printf 'd%.0s' $(seq 1 250))
+( cd "$I/opt" && k=0 && while [ $k -lt 18 ]; do mkdir "$part" && cd "$part" || exit 1; k=$((k + 1)); done &&
+  printf '\317\372\355\376junk\000X-Powered-By: PHP/8.2.10\000end' > php ) 2>/dev/null
+out=$("$SH" "$CHECK" --root "$I" 2>/dev/null)
+case $out in
+  *"search was incomplete"*"cannot open (no permission, or the path is too long)"*)
+    case $out in *"No PHP program"*) bad "over-long path -> never 'nothing found'" ;;
+      *) ok "PHP under an over-long path -> search incomplete, never 'nothing found'" ;; esac ;;
+  *) bad "PHP under an over-long path" "$(echo "$out" | tail -2 | cut -c1-160)" ;;
+esac
+rm -rf "$I"
+
 # --------------------------------------------------------------- whole run
 I=$T/empty; mkdir -p "$I/usr/local/bin"
 if [ "$(id -u)" -eq 0 ]; then

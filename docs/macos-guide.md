@@ -146,7 +146,8 @@ PHP came from, so it can give the right advice:
 | Anything else | Anywhere on the disk | Rebuild or upgrade it (reported as an unpackaged build) |
 
 The locations in this table are the usual ones. A copy of PHP in any other
-place is still found, and so is a renamed copy, because every PHP build
+place is still found. So is a renamed copy, if it is a Mach-O program or
+library larger than 1 MB, which every PHP build is, because every PHP build
 carries its version text inside. It is then reported as an unpackaged build.
 The output is percent-encoded in the same way as the Linux check's (see the
 [host check guide](host-check-guide.md#read-the-output)).

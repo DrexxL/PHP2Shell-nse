@@ -4,6 +4,26 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host checks, after the Ralph Wiggum audit of 5d596ed
+
+- Changelog rule: a CVE counts as fixed only in an item that opens with a fix
+  statement, places the exact CVE ID where that statement covers it, and has
+  no word from a longer list that denies, limits or postpones a fix. Whole
+  IDs only (CVE-2026-1096180 is not CVE-2026-109618). A bare mention leaves
+  the decision to the version. PASS messages ask a person to confirm the
+  quoted item. (Nine misleading phrases that passed before now give CHECK
+  FAILED.)
+- Renamed PHP: every file over 1 MB that starts like a program or library is
+  searched, whatever its name or permissions; on Linux, every file loaded by
+  a running program is checked. (A non-executable module with an unusual
+  name was missed before.)
+- A candidate file that cannot be opened, including one under a path longer
+  than the system allows, counts as an incomplete search. (It was dropped
+  silently before.)
+- Linux: every control character is percent-encoded; php-cgi in cgi-bin is
+  labelled cgi-fcgi; implausible version numbers give CHECK FAILED; package
+  database files must be regular files.
+
 ### Host checks, faster content search
 
 - The search for renamed PHP reads large files in batches with one `grep`
@@ -28,14 +48,14 @@ All notable changes to this project. Dates are in UTC.
   fake result lines.
 - Only regular dpkg `.list` files are read; a symlinked one is ignored.
 - Tests: adversarial cases added; the suite now passes with and without root
-  (46 as root, 44 without, which skips 2 root-only tests).
+  (at that time 46 as root, 44 without; see [Testing](docs/testing.md) for current counts).
 
 ### Metasploit module (new)
 
 - `metasploit/php2shell_banner.rb`: Metasploit auxiliary scanner that ports
   the nmap script's banner triage, with the same results and wording.
   Findings are stored as notes, never as vulnerabilities.
-- Self-checking tests in `tests/msf-tests.sh` (17 tests), run with the
+- Self-checking tests in `tests/msf-tests.sh` (now 22 tests), run with the
   official Metasploit Docker image.
 - New guide: `docs/metasploit-guide.md`.
 
@@ -45,7 +65,7 @@ All notable changes to this project. Dates are in UTC.
   MAMP, XAMPP, Laravel Herd and any other copy on the start-up disk) and
   running PHP processes (through `lsof`). Works with the bash 3.2 that macOS
   includes. `--root` checks a mounted Mac disk.
-- Self-checking tests in `tests/hostcheck-macos-tests.sh` (35 tests), passing
+- Self-checking tests in `tests/hostcheck-macos-tests.sh` (now 37 tests), passing
   under bash 5 and a real bash 3.2.57. Not yet run on a real Mac.
 - New guide: `docs/macos-guide.md`.
 

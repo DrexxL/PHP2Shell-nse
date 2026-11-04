@@ -83,16 +83,16 @@ dpkg_pkg "$I" libapache2-mod-php8.2:amd64 8.2.20-1 /usr/lib/apache2/modules/libp
 expect "changelog missing -> CHECK FAILED"    "$I" /usr/lib/apache2/modules/libphp8.2.so "CHECK FAILED" "could not be read"
 fake "$I" /usr/bin/php8.2 8.2.20
 dpkg_pkg "$I" php8.2-cli 8.2.20-1 /usr/bin/php8.2 '  * CVE-2026-109618 and CVE-2026-109619 are NOT fixed in this upload'
-expect "changelog says not fixed -> CHECK FAILED" "$I" /usr/bin/php8.2 "CHECK FAILED" "may deny one"
+expect "changelog says not fixed -> CHECK FAILED" "$I" /usr/bin/php8.2 "CHECK FAILED" "may deny, limit or postpone"
 
 # A changelog that names the CVEs without stating a fix must never PASS.
 I=$T/wording
 fake "$I" /usr/bin/php8.3 8.3.6
 dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * Investigate exposure to CVE-2026-109618 and CVE-2026-109619.'
-expect "changelog 'investigate exposure' -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "without clearly stating a fix"
+expect "changelog 'investigate exposure' -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "may deny, limit or postpone"
 fake "$I" /usr/bin/php8.4 8.4.20
 dpkg_pkg "$I" php8.4-cli 8.4.20-1 /usr/bin/php8.4 '  * Security fix pending: systems remain vulnerable to CVE-2026-109618 and CVE-2026-109619.'
-expect "changelog 'remain vulnerable' -> CHECK FAILED"    "$I" /usr/bin/php8.4 "CHECK FAILED" "may deny one"
+expect "changelog 'remain vulnerable' -> CHECK FAILED"    "$I" /usr/bin/php8.4 "CHECK FAILED" "may deny, limit or postpone"
 # Ubuntu's real layout: the fix is stated at the top of the item, the CVE IDs
 # come hundreds of lines later, and a file name contains the word "pending".
 fake "$I" /usr/bin/php8.2 8.2.20
@@ -103,6 +103,63 @@ fake "$I" /usr/bin/php8.2 8.2.20
 } > "$T/ubuntu-changelog.txt"
 dpkg_pkg "$I" php8.2-cli 8.2.20-1ubuntu1 /usr/bin/php8.2 "$(cat "$T/ubuntu-changelog.txt")"
 expect "Ubuntu-style item, IDs far below the fix -> PASS" "$I" /usr/bin/php8.2 PASS "SECURITY UPDATE: Remote RCE"
+
+# Misleading wording from an audit: none may give PASS (PHP 8.3.6 < 8.3.36).
+A=CVE-2026-109618; B=CVE-2026-109619; n=0
+cl_case() { # name version changelog-text expected-result [expected-text]
+  n=$((n + 1)); local I=$T/cl$n
+  fake "$I" /usr/bin/php8.3 "$2"
+  dpkg_pkg "$I" php8.3-cli "$2-1" /usr/bin/php8.3 "$3"
+  expect "$1" "$I" /usr/bin/php8.3 "$4" "${5-}"
+}
+for t in "Fixes for $A and $B will be included in the next upload." \
+         "d/p/build.patch: fix FTBFS. $A and $B deferred." \
+         "SECURITY UPDATE: not fixing $A and $B here" \
+         "Backport of the fix for $A and $B is not included." \
+         "Fixed typo in README. $A and $B are not addressed." \
+         "Fix $A and $B in a later release" \
+         "Patch for $A/$B dropped" \
+         "SECURITY UPDATE: partial fix for $A and $B (incomplete)" \
+         "Security fix for $A and $B disabled by default."; do
+  cl_case "misleading: ${t:0:44}..." 8.3.6 "  * $t" "CHECK FAILED"
+done
+cl_case "look-alike IDs (CVE-2026-1096180) are not a mention" 8.3.6 "  * SECURITY UPDATE: fix CVE-2026-1096180 and CVE-2026-1096190" FAIL "no record of either CVE"
+# Genuine formats must still give PASS.
+cl_case "Debian 'Fix CVE-...:' items -> PASS" 8.3.6 "  * Fix $A: state corruption.
+  * Fix $B: stale request state." PASS "Confirm the quoted item"
+cl_case "Debian 'CVE-A, CVE-B:' item -> PASS" 8.3.6 "  * $A, $B: fix remote code execution" PASS
+cl_case "Debian 'Backport fixes for:' list -> PASS" 8.3.6 "  * Backport fixes for:
+    - $A: memory corruption
+    - $B: stale request state" PASS
+cl_case "Debian lead wrapped over two lines -> PASS" 8.3.6 "  * Fix $A and
+    $B: remote code execution" PASS
+# A bare mention leaves the decision to the version.
+cl_case "bare mention, version at fix -> PASS by version" 8.3.36 "  * New upstream version 8.3.36 ($A, $B)" PASS "at or after the fixed release"
+cl_case "bare mention, version below fix -> CHECK FAILED" 8.3.6 "  * New upstream version 8.3.6 ($A, $B)" "CHECK FAILED" "without clearly stating a fix"
+
+# A PHP module that is not executable and has an unusual name is found.
+I=$T/oddmods
+fake "$I" /opt/mods/phpmodule.bundle 8.2.10
+fake "$I" /usr/local/lib/httpd/x_module 8.2.10
+for f in /opt/mods/phpmodule.bundle /usr/local/lib/httpd/x_module; do
+  head -c 3000000 /dev/zero >> "$I$f"; chmod 644 "$I$f"
+done
+expect "non-executable module with odd name is found (1)" "$I" /opt/mods/phpmodule.bundle FAIL
+expect "non-executable module with odd name is found (2)" "$I" /usr/local/lib/httpd/x_module FAIL
+
+# A PHP file under a path longer than the system allows is never dropped
+# silently: the search is reported as incomplete.
+I=$T/longpath; mkdir -p "$I/opt"
+part=$(printf 'd%.0s' $(seq 1 250))
+( cd "$I/opt" && for k in $(seq 1 18); do mkdir "$part" && cd "$part" || exit 1; done &&
+  printf '\177ELF\0\0junk\0X-Powered-By: PHP/8.2.10\0end' > php )
+out=$(bash "$CHECK" --root "$I" 2>/dev/null)
+if [[ $out == *"walk was incomplete"*"cannot open (no permission, or the path is too long)"* && $out != *"No PHP binary"* ]]; then
+  PASSED=$((PASSED + 1)); echo "ok    PHP under an over-long path -> walk incomplete, never 'nothing found'"
+else
+  FAILED=$((FAILED + 1)); echo "FAIL  PHP under an over-long path"; echo "$out" | tail -3 | cut -c1-200 | sed 's/^/      /'
+fi
+rm -rf "$I"
 
 # A renamed PHP binary is found by the marker inside it.
 I=$T/renamed

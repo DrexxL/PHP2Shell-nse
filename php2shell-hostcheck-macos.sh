@@ -27,7 +27,7 @@
 #   PASS          The version is the fixed one or newer.
 #   FAIL          The version is old enough to have the bugs, and nothing on
 #                 the Mac records a fix.
-#   CHECK FAILED  The proof could not be read either way. The line says why
+#   CHECK FAILED  The evidence could not be read either way. The line says why
 #                 and what to do next. It never guesses.
 #
 # Example: Homebrew's php@8.3 at version 8.3.20 is older than the fix
@@ -180,10 +180,24 @@ is_prerelease() {
 # PHP's version marker: every PHP build carries this text.
 MARKER='X-Powered-By: PHP/'
 
-# Mach-O (64-bit, 32-bit, universal) or ELF, from the first four bytes.
+# is_program FILE: does FILE start like a Mac program or library (Mach-O:
+# 64-bit, 32-bit or universal) or an ELF program? A builtin read, so no
+# program is started per file. A file that cannot be opened (no permission,
+# or a path longer than macOS allows) is logged as a search error, so it can
+# never silently drop out.
 is_program() {
-  case $(od -An -tx1 -N4 "$1" 2>/dev/null | tr -d ' \n') in
-    cffaedfe|cefaedfe|feedfacf|feedface|cafebabe|bebafeca|7f454c46) return 0 ;;
+  local m=""
+  if [ ! -r "$1" ]; then
+    # A file that vanished since it was listed is not an error. A path at or
+    # over the macOS limit (1024 bytes) cannot even be tested for existence,
+    # so it always counts as an error.
+    if [ ${#1} -lt 1024 ] && [ ! -e "$1" ] && [ ! -L "$1" ]; then return 1; fi
+    printf 'cannot open (no permission, or the path is too long): %s\n' "$1" >> "$TMP/errors"
+    return 1
+  fi
+  IFS= read -r -n 4 -d '' m 2>/dev/null < "$1"
+  case $m in
+    $'\xcf\xfa\xed\xfe'|$'\xce\xfa\xed\xfe'|$'\xfe\xed\xfa\xcf'|$'\xfe\xed\xfa\xce'|$'\xca\xfe\xba\xbe'|$'\xbe\xba\xfe\xca'|$'\x7fELF') return 0 ;;
   esac
   return 1
 }
@@ -395,7 +409,7 @@ if [ $LIVE -eq 1 ]; then
     while IFS= read -r path; do
       if is_php_name "$path"; then printf '%s\n' "$path" >> "$TMP/phppaths"; continue; fi
       case $path in /System/*|/usr/lib/*) continue ;; esac
-      printf '%s\0' "$path" >> "$TMP/lsofothers"
+      is_program "$path" && printf '%s\0' "$path" >> "$TMP/lsofothers"
     done < "$TMP/lsofpaths"
     # Search the other loaded files for PHP's version text in batches.
     xargs -0 grep -laF --null "$MARKER" /dev/null < "$TMP/lsofothers" 2>/dev/null |
@@ -431,11 +445,14 @@ done
 find "$base" \( "${prune[@]}" -o -fstype nfs -o -fstype smbfs -o -fstype afpfs -o -fstype webdav \) -prune -o \
      -type f \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' -o -name 'phpdbg*' \
                 -o -name 'libphp*.so' -o -name 'libphp*.dylib' -o -name 'mod_php*.so' \
-                -o \( -size +1M \( -perm -100 -o -perm -010 -o -perm -001 -o -name '*.dylib' -o -name '*.so' \) \) \) \
-     -print0 2>"$TMP/errors" > "$TMP/candidates"
+                -o -size +1M \) \
+     -print0 2>>"$TMP/errors" > "$TMP/candidates"
 : > "$TMP/named"; : > "$TMP/others"
 while IFS= read -r -d '' f; do
-  if is_php_name "$f"; then printf '%s\0' "$f" >> "$TMP/named"; else printf '%s\0' "$f" >> "$TMP/others"; fi
+  # Large files of any name or permission: only those that start like a
+  # program are searched for PHP's version text.
+  if is_php_name "$f"; then printf '%s\0' "$f" >> "$TMP/named"
+  elif is_program "$f"; then printf '%s\0' "$f" >> "$TMP/others"; fi
 done < "$TMP/candidates"
 # grep exits 1 or xargs 123 when a batch has no match: that is not an error.
 # Files grep cannot read are counted with the folders find could not read.
@@ -471,9 +488,9 @@ nerr=${nerr:-0}
 nruntimes=$(wc -l < "$TMP/runtimes" | tr -d ' ')
 if [ "$nerr" -gt 0 ]; then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
-    "The disk search was incomplete: $nerr folder(s) or file(s) could not be read, first: $(grep -v 'No such file or directory' "$TMP/errors" | head -1 | cut -c1-120). Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo."
+    "The disk search was incomplete: $nerr folder(s) or file(s) could not be read, first: $(grep -v 'No such file or directory' "$TMP/errors" | head -1 | cut -c1-160). Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo."
 elif [ "$nruntimes" -eq 0 ] && [ "$(id -u)" -eq 0 ] && [ $NCHK -eq 0 ]; then
-  emit PASS "-" "-" "-" "" "" "No PHP program, module or process found on the inspected disks."
+  emit PASS "-" "-" "-" "" "" "No PHP program, module or process found on the inspected disks (PHP-named files, programs and libraries over 1 MB, running programs and loaded libraries)."
 fi
 
 printf '# summary: %d PASS, %d FAIL, %d CHECK FAILED\n' "$NPASS" "$NFAIL" "$NCHK"

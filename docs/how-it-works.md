@@ -143,9 +143,14 @@ It recognises PHP in two ways: by its usual file names (`php`, `php8.3`,
 `php-fpm`, `libphp.so` and so on), and by the version text that every PHP
 build carries inside it (see step 2). **Example:** a PHP binary renamed to
 `/opt/app/worker` has no PHP-like name, but it still carries
-`X-Powered-By: PHP/8.2.10`, so it is found. To keep the search fast, the
-inside of a file is checked only for programs and libraries larger than 1 MB;
-every PHP build is much larger than that.
+`X-Powered-By: PHP/8.2.10`, so it is found.
+
+To keep the search fast, the version text is looked for in every file larger
+than 1 MB whose first bytes mark it as a program or library (ELF on Linux,
+Mach-O on a Mac), whatever its name or permissions; every PHP build is much
+larger than 1 MB. On a live system, every file loaded by a running program is
+checked the same way. **Limit:** a PHP build that has been packed, encrypted
+or edited so that its version text is gone is found only by its name.
 
 ### Step 2: Read the version without running anything
 
@@ -185,31 +190,55 @@ Debian, Ubuntu and Red Hat packages include a **changelog**: a list of
 changes in each version. When a distribution backports a fix, it names the
 CVE in the changelog. The host check reads the changelog **item by item**:
 a "  * " bullet with its sub-lines in Debian and Ubuntu, or a "- " line in
-Red Hat. A CVE counts as fixed only if an item names it **and** states a fix,
-with words such as "security update", "fix", "patch", "backport" or
-"resolves".
+Red Hat.
 
-**Example:** Ubuntu's item starts with `SECURITY UPDATE: Remote RCE via
-state corruption issue` and lists `CVE-2026-109618` and `CVE-2026-109619`
-at its end. Both CVEs count as fixed.
+A CVE counts as fixed only if one item passes all three of these tests:
 
-It also guards against wrong readings:
+1. **The item opens with a fix.** Its first sentence starts with "SECURITY
+   UPDATE", "Security fix", "Fix", "Fixes", "Fixed", "Backport", "Resolves",
+   "Patch", "Apply" or "Address", or with the CVE ID itself followed by a
+   colon ("CVE-2026-109618: ...").
+2. **The CVE is where that fix statement covers it.** The exact ID appears in
+   that first sentence, or on its own line inside the item, such as
+   "- CVE-2026-109618" or "- CVE-2026-109618: ...". A look-alike number, such
+   as CVE-2026-1096180, does not count.
+3. **Nothing in the item denies, limits or postpones the fix.** The words
+   checked are: not fixed (also not fixing, not included, not addressed, not
+   applied, not backported, not patched, not resolved, not complete, not
+   covered, not handled, with "yet" or "currently" allowed in between),
+   unfixed, not affected, does not fix, remains vulnerable, still vulnerable,
+   investigate, pending, revert, to be fixed, todo, no fix, will, next, later,
+   future, defer, postpone, dropped, removed, partial, incomplete, disabled,
+   without, tbd, wontfix, won't fix, skip, ignore. They count only as whole
+   words, so a file name such as `oom_pending_at_shutdown.phpt` does not
+   count as "pending".
 
-- An item that names a CVE but states no fix gives CHECK FAILED.
-  **Example:** "Investigate exposure to CVE-2026-109618 and CVE-2026-109619."
-- An item with words that deny or postpone a fix gives CHECK FAILED, even if
-  it also says "fix". **Example:** "Security fix pending: systems remain
-  vulnerable to ...". The words checked are: not fixed, not yet fixed,
-  unfixed, not affected, does not fix, remains vulnerable, still vulnerable,
-  investigate, pending, revert, to be fixed, todo, no fix.
-- Words count only as whole words. A file name such as
-  `oom_pending_at_shutdown.phpt` does not count as "pending".
-- If only one CVE has a stated fix, the result is CHECK FAILED.
-- Every PASS names the changelog file it used and quotes the item.
+**Example (PASS):** Ubuntu's item starts with `SECURITY UPDATE: Remote RCE via
+state corruption issue`, and lists `- CVE-2026-109618` and
+`- CVE-2026-109619` on their own lines at its end.
 
-This is a careful reading of plain text, not an understanding of it. An
-unusual changelog can still mislead it, so every PASS quotes its evidence
-for a person to read.
+**Examples (not PASS):**
+
+| Changelog item | Why it is not accepted |
+|---|---|
+| "Investigate exposure to CVE-2026-109618 and CVE-2026-109619." | "investigate" |
+| "Fixes for CVE-2026-109618 and CVE-2026-109619 will be included in the next upload." | "will", "next" |
+| "Fixed typo in README. CVE-2026-109618 is not addressed." | "not addressed" |
+| "Patch for CVE-2026-109618/CVE-2026-109619 dropped" | "dropped" (it opens with "Patch", but the patch was dropped) |
+
+What happens when the changelog names the CVEs but no item passes:
+
+- If an item that names a CVE has a word from test 3, the result is CHECK
+  FAILED, whatever the version.
+- If the CVEs are only mentioned, as in "New upstream version 8.3.36
+  (CVE-2026-109618, CVE-2026-109619)", the version decides: PASS at or after
+  the fix, CHECK FAILED below it.
+- If only one CVE has an accepted fix, the result is CHECK FAILED.
+
+Every changelog PASS names the changelog file and quotes the item, and asks
+a person to confirm it. **This is a careful reading of plain text, not an
+understanding of it.** The tool matches wording; an unusual changelog can
+still mislead it. That is why the quote is there.
 
 ### Step 5: Decide
 

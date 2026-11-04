@@ -18,12 +18,13 @@
 # It only reads. It changes nothing.
 #
 # RESULTS (one line for each PHP program or module):
-#   PASS          There is proof of the fix: the changelog lists both CVE
-#                 numbers, or the version is the fixed one or newer.
+#   PASS          A fix is recorded: the version is the fixed one or newer,
+#                 or a changelog item is read as stating a fix for both
+#                 CVEs (the line quotes it; a person should confirm it).
 #   FAIL          The version is old enough to have the bugs, and nothing
 #                 shows a fix: the changelog does not list them, or the
 #                 program was built by hand with no package record.
-#   CHECK FAILED  The proof could not be read either way. The line says why
+#   CHECK FAILED  The evidence could not be read either way. The line says why
 #                 and what to do next. It never guesses.
 #
 # Example: Ubuntu's PHP 8.3.6 package is numbered below the fix (8.3.36),
@@ -57,7 +58,7 @@ CHECKER_VERSION="1.1"
 RULES_DATE="2026-11-04"
 CVE_A="CVE-2026-109618"
 CVE_B="CVE-2026-109619"
-CVE_RE="${CVE_A}|${CVE_B}"
+CVE_RE="(${CVE_A}|${CVE_B})([^0-9]|$)"   # whole IDs: CVE-2026-1096180 is not a match
 MARKER='X-Powered-By: PHP/'
 declare -A FIXED=([8.2]=8.2.35 [8.3]=8.3.36 [8.4]=8.4.27 [8.5]=8.5.12)
 
@@ -139,7 +140,23 @@ vcmp() {
 
 is_prerelease() { [[ ${1,,} =~ ^(rc|alpha|beta|-?dev) ]]; }
 
-is_elf() { [[ $(head -c4 "$1" 2>/dev/null | od -An -c | tr -d ' \n') == '177ELF' ]]; }
+# is_elf FILE: does FILE start with the ELF program header? A builtin read,
+# so no program is started per file. A file that cannot be opened (no
+# permission, or a path longer than the system allows) is logged as a
+# search error, so it can never silently drop out.
+is_elf() {
+  local m=""
+  if [[ ! -r $1 ]]; then
+    # A file that vanished since it was listed is not an error. A path at or
+    # over the system limit (4096 bytes on Linux) cannot even be tested for
+    # existence, so it always counts as an error.
+    (( ${#1} < 4096 )) && [[ ! -e $1 && ! -L $1 ]] && return 1
+    printf 'cannot open (no permission, or the path is too long): %s\n' "$1" >> "$errlog"
+    return 1
+  fi
+  IFS= read -r -n 4 -d '' m 2>/dev/null < "$1"
+  [[ $m == $'\x7fELF' ]]
+}
 
 # The PHP core embeds "X-Powered-By: PHP/<PHP_VERSION>" in every SAPI.
 binary_version() {
@@ -160,7 +177,7 @@ is_php_name() {
 # looked at once.
 has_marker() {
   if [[ -z ${MARKED[$2]+x} ]]; then
-    if grep -aqF "$MARKER" "$1" 2>/dev/null; then MARKED[$2]=1; else MARKED[$2]=0; fi
+    if grep -aqF "$MARKER" "$1" 2>>"$errlog"; then MARKED[$2]=1; else MARKED[$2]=0; fi
   fi
   [[ ${MARKED[$2]} == 1 ]]
 }
@@ -285,10 +302,10 @@ file_matches_package() {
 }
 
 # changelog_scan root mgr pkg branch pkgver: sets CL_STATE (FOUND, NONE,
-# UNREADABLE), CL_IDS, CL_SRC, CL_QUOTE, CL_NEG.
+# UNREADABLE), CL_IDS (fixed), CL_DENIED, CL_UNCLEAR, CL_SRC, CL_QUOTE.
 changelog_scan() {
   local root=$1 mgr=$2 pkg=$3 branch=$4 pkgver=$5 d f text cand
-  CL_STATE=UNREADABLE; CL_IDS=""; CL_SRC=""; CL_QUOTE=""; CL_NEG=""
+  CL_STATE=UNREADABLE; CL_IDS=""; CL_SRC=""; CL_QUOTE=""; CL_DENIED=""; CL_UNCLEAR=""
   case $mgr in
     dpkg)
       for d in "${pkg%%:*}" "php${branch}-common"; do
@@ -309,43 +326,82 @@ changelog_scan() {
       CL_SRC="rpm changelog of package $pkg" ;;
     *) return ;;
   esac
-  grep -qE "$CVE_RE" <<<"$text" || { CL_STATE=NONE; return; }
+  grep -qiE "$CVE_RE" <<<"$text" || { CL_STATE=NONE; return; }
   CL_STATE=FOUND
   # Judge each changelog item (a "  * " bullet in Debian, a "- " line in
-  # rpm, with its continuation lines). A CVE counts as fixed only if an
-  # item that names it also states a fix and contains no wording that
-  # denies or postpones one. Any other mention makes the result unclear.
+  # rpm, with its continuation lines). A CVE counts as FIXED only if:
+  #   LEAD      the item's opening sentence states a fix ("SECURITY UPDATE",
+  #             "Fix", "Backport", "Resolves", ... or "CVE-ID:"), and
+  #   POSITION  the whole CVE ID is in that sentence, or on its own sub-line
+  #             ("- CVE-ID", "- CVE-ID: ..."), and
+  #   no DENY   no word in the item denies, limits or postpones a fix.
+  # An item with a DENY word that names the CVE makes it DENIED. Any other
+  # mention makes it UNCLEAR, which then leaves the decision to the version.
   local res
   res=$(awk -v A="$CVE_A" -v B="$CVE_B" '
-    function flush(   low, fix, neg, i, c) {
-      if (item == "") return
-      low = tolower(item)
-      # Whole words only: a word must start after a space or punctuation,
-      # so names such as "oom_pending_at_shutdown.phpt" do not count.
-      fix = (low ~ /(^|[ \t\n(:;,"])(security update|fix|fixes|fixed|patch|patched|backport|backported|resolves?)([^a-z_]|$)/)
-      neg = (low ~ /(^|[ \t\n(:;,"])(not (yet )?fixed|unfixed|not affected|does not fix|doesn.t fix|remains? vulnerable|still vulnerable|investigat[a-z]*|pending|revert[a-z]*|to be fixed|todo|no fix)([^a-z_]|$)/)
-      for (i = 1; i <= 2; i++) {
-        c = (i == 1) ? A : B
-        if (index(item, c) == 0) continue
-        if (fix && !neg) { ok[c] = 1; if (good == "") good = first }
-        else { unclear = 1; if (bad == "") bad = first " ... " c }
+    function has_id(s, id,   p, rest, before, after) {
+      rest = s
+      while ((p = index(rest, id)) > 0) {
+        before = (p == 1) ? "" : substr(rest, p - 1, 1)
+        after = substr(rest, p + length(id), 1)
+        if (before !~ /[0-9a-z]/ && after !~ /[0-9]/) return 1
+        rest = substr(rest, p + length(id))
       }
-      item = ""
+      return 0
+    }
+    function flush(   low, lead, t, i, j, c, idl, deny, leadok, pos, sq, line, part) {
+      if (nl == 0) return
+      low = tolower(whole)
+      deny = (low ~ DENY)
+      lead = L[1]; sub(/^[ \t]*[-*][ \t]*/, "", lead)
+      for (i = 2; i <= nl; i++) {
+        if (L[i] ~ /^[ \t]*[-*+][ \t]/) break
+        t = L[i]; sub(/^[ \t]+/, "", t); lead = lead " " t
+      }
+      sub(/\.[ \t].*$/, "", lead)
+      lead = tolower(lead)
+      leadok = (lead ~ LEADRE) || (lead ~ CVEFIRST)
+      for (j = 1; j <= 2; j++) {
+        c = (j == 1) ? A : B; idl = tolower(c)
+        if (!has_id(low, idl)) continue
+        if (deny) { denied = 1; if (dq == "") dq = L[1] " ... " c; continue }
+        pos = 0; sq = ""
+        if (has_id(lead, idl)) pos = 1
+        else for (i = 2; i <= nl; i++) {
+          line = tolower(L[i])
+          if (match(line, CVELINE)) {
+            part = substr(line, RSTART, RLENGTH)
+            if (has_id(part, idl)) { pos = 1; sq = L[i]; sub(/^[ \t]+/, "", sq); break }
+          }
+        }
+        if (leadok && pos) { ok[c] = 1; if (gq == "") gq = L[1] (sq != "" ? " ... " sq : "") }
+        else { unclear = 1; if (uq == "") uq = L[1] " ... " c }
+      }
+      nl = 0; whole = ""
+    }
+    BEGIN {
+      ID = "cve-[0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9]*"
+      LIST = ID "(([ \t]*[,/]|[ \t]+and)[ \t]*" ID ")*"
+      LEADRE = "^(security (update|fix(es)?)|fix(es|ed)?|backport(s|ed)?|resolve[sd]?|patch(es|ed)?|appl(y|ies|ied)|address(es|ed)?)([^a-z_]|$)"
+      CVEFIRST = "^" LIST "[ \t]*:"
+      CVELINE = "^[ \t]*[-*+][ \t]*" LIST "[ \t]*(:|[(]|$)"
+      DENY = "(^|[ \t\n(:;,\"])(not (yet |currently )?(fix|fixing|fixed|included|addressed|applied|backported|patched|resolved|complete|covered|handled)|unfixed|not affected|does not fix|doesn.t fix|remains? vulnerable|still vulnerable|investigat[a-z]*|pending|revert[a-z]*|to be fixed|todo|no fix|will|next|later|future|defer[a-z]*|postpone[a-z]*|dropped|removed|partial(ly)?|incomplete|disabled|without|tbd|wontfix|won.t fix|skip[a-z]*|ignor[a-z]*)([^a-z_]|$)"
     }
     /^[^ \t*-]/ || /^ -- / || /^\* / { flush(); next }
-    /^  \* / || /^- /                { flush(); item = $0; first = $0; next }
-    { if (item == "") { item = $0; first = $0 } else item = item "\n" $0 }
+    /^  \* / || /^- /                { flush(); nl = 1; L[1] = $0; whole = $0; next }
+    { if (nl == 0) { nl = 1; L[1] = $0; whole = $0 } else { L[++nl] = $0; whole = whole "\n" $0 } }
     END {
       flush()
       ids = (ok[A] ? A : "") ((ok[A] && ok[B]) ? " " : "") (ok[B] ? B : "")
-      print ids "\037" unclear "\037" (unclear ? bad : good)
+      q = denied ? dq : ((ok[A] && ok[B]) ? gq : (unclear ? uq : gq))
+      print ids "\037" denied "\037" unclear "\037" q
     }' <<<"$text")
-  IFS=$'\037' read -r CL_IDS CL_NEG CL_QUOTE <<<"$res"
+  IFS=$'\037' read -r CL_IDS CL_DENIED CL_UNCLEAR CL_QUOTE <<<"$res"
   # The IDs appear in the text, but in no item that could be judged.
-  if [[ -z $CL_IDS && -z $CL_NEG ]]; then
-    CL_NEG=1; CL_QUOTE="the CVE IDs appear outside any changelog item"
+  if [[ -z $CL_IDS && -z $CL_DENIED && -z $CL_UNCLEAR ]]; then
+    CL_UNCLEAR=1; CL_QUOTE="the CVE IDs appear outside any changelog item"
   fi
-  CL_QUOTE=$(sed 's/^[[:space:]*-]*//' <<<"$CL_QUOTE" | cut -c1-140)
+  CL_QUOTE=$(sed 's/^[[:space:]*-]*//' <<<"$CL_QUOTE" | cut -c1-200)
 }
 
 # ---------------------------------------------------------------- evaluate
@@ -431,14 +487,14 @@ evaluate() {
     CL_STATE=NA
   fi
 
-  if [[ $CL_STATE == FOUND && -n $CL_NEG ]]; then
+  if [[ $CL_STATE == FOUND && -n $CL_DENIED ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "The changelog ($CL_SRC) mentions the CVEs without clearly stating a fix, or with wording that may deny one: \"$CL_QUOTE\". Read the entry."
+      "The changelog ($CL_SRC) names the CVEs with wording that may deny, limit or postpone a fix: \"$CL_QUOTE\". Read the entry."
     return
   fi
   if [[ $CL_STATE == FOUND && $CL_IDS == *"$CVE_A"* && $CL_IDS == *"$CVE_B"* ]]; then
     emit PASS "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "The changelog ($CL_SRC) records a fix for both $CVE_A and $CVE_B, e.g. \"$CL_QUOTE\"."
+      "The changelog ($CL_SRC) records a fix for both $CVE_A and $CVE_B: \"$CL_QUOTE\". Confirm the quoted item."
     return
   fi
 
@@ -462,9 +518,12 @@ evaluate() {
     return
   fi
 
-  if [[ $CL_STATE == FOUND ]]; then
+  if [[ $CL_STATE == FOUND && -n $CL_IDS ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
       "Version precedes $fixed and the changelog ($CL_SRC) records only $CL_IDS. Check the vendor advisory for the other CVE."
+  elif [[ $CL_STATE == FOUND ]]; then
+    emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
+      "Version precedes $fixed, and the changelog ($CL_SRC) mentions the CVEs without clearly stating a fix: \"$CL_QUOTE\". Read the entry."
   elif [[ $CL_STATE == NA ]]; then
     emit FAIL "$sapi" "$show" "$seen" "$full" "-" \
       "Unpackaged build, version precedes $fixed, and no package record of a fix exists. If it was patched by hand, document that; otherwise rebuild or upgrade."
@@ -523,6 +582,9 @@ if [[ -n $missing ]]; then
   exit 2
 fi
 
+errlog=$(mktemp) || exit 70   # search errors: unreadable folders and files
+trap 'rm -f "$errlog"' EXIT
+
 [[ $EUID -ne 0 ]] && emit "CHECK FAILED" "-" "-" "-" "" "" \
   "Not run as root: some processes or files may not have been inspected. Re-run as root."
 
@@ -557,12 +619,20 @@ if [[ $LIVE -eq 1 ]] && readlink /proc/self/ns/mnt >/dev/null 2>&1; then
       fi
     fi
     # PHP modules loaded into another process, such as mod_php in Apache.
+    # Every mapped file counts, whatever its name: Apache loads modules by
+    # any file name. Only regular files that start like a program are read.
     while read -r range _ _ _ _ lib; do
-      [[ $lib == /*.so* ]] || continue
+      [[ $lib == /* ]] || continue
       st=""; [[ $lib == *" (deleted)" ]] && { lib=${lib% (deleted)}; st=1; }
       from="$r$lib"; [[ -n $st ]] && from="/proc/$pid/map_files/$range"
-      [[ $lib =~ /(libphp|mod_php)[^/]*\.so ]] || has_marker "$from" "$ns|$lib|$st" || continue
-      add_rt "$ns|$lib|$st" "$r" "$lib" "$from" "pid$pid" "$st" "$lab"
+      key="$ns|$lib|$st"
+      if [[ ! $lib =~ /(libphp|mod_php)[^/]*\.so ]]; then
+        if [[ -z ${MARKED[$key]+x} ]]; then
+          if [[ -f $from ]] && is_elf "$from"; then has_marker "$from" "$key"; else MARKED[$key]=0; fi
+        fi
+        [[ ${MARKED[$key]} == 1 ]] || continue
+      fi
+      add_rt "$key" "$r" "$lib" "$from" "pid$pid" "$st" "$lab"
     done 2>/dev/null < "$d/maps"
   done
 fi
@@ -598,8 +668,6 @@ awk -v b="$base" -v bfs="$base_fs" -v list=" ${SKIP_FS[*]} " '{ mp = $2; gsub(/\
     if (index(list, " " $3 " ") && $3 != bfs && (b == "/" || index(mp, b "/") == 1))
       print "# not searched: " mp " (" $3 ")" }' /proc/self/mounts 2>/dev/null
 
-errlog=$(mktemp) || exit 70
-trap 'rm -f "$errlog"' EXIT
 
 # Files with a PHP name are kept for checking. Every other candidate (large
 # programs and libraries) is searched for PHP's version text in batches, so
@@ -612,9 +680,12 @@ find "$base" \( -path "$ROOT/proc" -o -path "$ROOT/sys" -o -path "$ROOT/dev" \
      \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' \
         -o -name 'phpdbg*' -o -name 'libphp*.so*' -o -name 'mod_php*.so*' \
         -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \
-        -o \( -size +1M \( -perm /111 -o -name '*.so*' \) \) \) -print0 2>"$errlog" > "$cands"
+        -o -size +1M \) -print0 2>>"$errlog" > "$cands"
 while IFS= read -r -d '' f; do
-  if is_php_name "$f"; then printf '%s\0' "$f" >> "$named"; else printf '%s\0' "$f" >> "$others"; fi
+  # Large files of any name or permission: only those that start like a
+  # program are searched for PHP's version text.
+  if is_php_name "$f"; then printf '%s\0' "$f" >> "$named"
+  elif is_elf "$f"; then printf '%s\0' "$f" >> "$others"; fi
 done < "$cands"
 xargs -0 -r grep -laF --null "$MARKER" < "$others" > "$marked" 2>>"$errlog"
 while IFS= read -r -d '' f; do
@@ -671,9 +742,9 @@ done
 walk_errors=$(grep -v 'No such file or directory' "$errlog" | wc -l)
 if ((walk_errors > 0)); then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
-    "The filesystem walk was incomplete: $walk_errors error(s), first: $(grep -v 'No such file or directory' "$errlog" | head -1 | cut -c1-120). Fix access and re-run."
+    "The filesystem walk was incomplete: $walk_errors error(s), first: $(grep -v 'No such file or directory' "$errlog" | head -1 | cut -c1-160). Fix access, or inspect the named path by hand, and re-run."
 elif [[ ${#ORDER[@]} -eq 0 && $EUID -eq 0 && $NCHK -eq 0 ]]; then
-  emit PASS "-" "-" "-" "" "" "No PHP binary, module or process found on the inspected filesystems."
+  emit PASS "-" "-" "-" "" "" "No PHP binary, module or process found on the inspected filesystems (PHP-named files, programs and libraries over 1 MB, running programs and loaded libraries)."
 fi
 
 printf '# summary: %d PASS, %d FAIL, %d CHECK FAILED\n' "$NPASS" "$NFAIL" "$NCHK"

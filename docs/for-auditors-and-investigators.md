@@ -9,8 +9,9 @@ clean record.
 
 | Tool and result | Evidence it rests on | What it proves | What it does not prove |
 |---|---|---|---|
-| Host check, PASS (changelog) | An item in the installed package's changelog names each CVE and states a fix ("security update", "fix", "patch", "backport" or "resolves", as whole words), with no wording that denies or postpones one; the file's version, and on Debian/Ubuntu its checksum where the package recorded one, match the package record. | The package maker states the fix is included in this package, and the file is that package's file. | That the fix works, or that no other copy of PHP exists outside the searched filesystems. |
+| Host check, PASS (changelog) | For each CVE, an item in the installed package's changelog opens with a fix statement, places the exact CVE ID where that statement covers it, and has no word that denies, limits or postpones a fix (see [How the tools work](how-it-works.md#step-4-read-the-packages-change-history)); the file's version, and on Debian/Ubuntu its checksum where the package recorded one, match the package record. | The changelog contains text the tool reads as the package maker stating the fix is included, and the file is that package's file. The quoted item lets a person confirm the reading. | That the reading is right: the tool matches wording, it does not understand it. That the fix works. That no other copy of PHP exists outside the searched filesystems. |
 | Host check, PASS (version) | The version stored inside the file is at or after the fixed release. | The file reports a fixed upstream version. | That the version string was not altered by someone who built the file. |
+| Host check, PASS (no PHP found) | The search ran as root with no errors and found no PHP-named file, no program or library over 1 MB carrying PHP's version text, and no such running program or loaded library. | No PHP was found among those files. | That there is no PHP on skipped mounts, in container storage or in snaps (those are listed separately), or a PHP build packed, encrypted or edited so that its version text is gone (such a build is found only by its name). |
 | Host check, FAIL | The version is in the affected range, and no changelog entry or package record shows a fix. | No remediation record exists for this file. | That an attacker can exploit it. Exploitability also depends on configuration. |
 | macOS host check, PASS | The version stored inside the file is at or after the fixed release; for Homebrew, the file's version matches its Homebrew folder, which has an install receipt. | The file reports a fixed upstream version. | That the version string was not altered by whoever built the file. |
 | macOS host check, FAIL | The version is in the affected range; the Mac holds no changelog of fixes. | No remediation record exists on the Mac. | That an attacker can exploit it. |
@@ -100,9 +101,10 @@ Two behaviours protect the image's integrity:
   `/usr/share/doc/x -> /usr/share/doc/y` is resolved inside
   `/mnt/evidence`, so the checking computer's own files are not read in
   place of the image's.
-- **Incomplete searches are reported.** If any folder cannot be read, the
-  result is CHECK FAILED. The tool never reports "no PHP found" after a
-  partial search.
+- **Incomplete searches are reported.** If any folder or candidate file
+  cannot be read, including a file under a path longer than the system
+  limit, the result is CHECK FAILED and the error is named. The tool never
+  reports "no PHP found" after a partial search.
 
 ### Live systems
 

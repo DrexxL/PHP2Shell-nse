@@ -70,13 +70,15 @@ them. It reads the version number stored inside each file, finds out which
 software package installed the file, and searches that package's history of
 changes (its "changelog") for the two CVE numbers.
 
-- **PASS** means there is proof of the fix. Either the changelog has an
-  entry that states a fix for both CVE numbers, or the version is at or after
-  the fixed one. A changelog that only *mentions* the CVE numbers is not
-  enough.
+- **PASS** means a fix is recorded. Either the version is at or after the
+  fixed one, or the changelog has an item that the tool reads as stating a
+  fix for both CVE numbers. In the second case, the result line quotes that
+  item, and a person should read it to confirm. A changelog that only
+  *mentions* the CVE numbers is not enough. The tool matches wording; it does
+  not understand it.
 - **FAIL** means the version is old enough to have the bugs, and nothing
   shows that a fix was added.
-- **CHECK FAILED** means the tool could not find proof either way. It never
+- **CHECK FAILED** means the tool could not find a record either way. It never
   guesses. Every CHECK FAILED line says what went wrong and what to do next.
 
 Before it trusts a changelog, the host check also makes sure the file really
@@ -115,7 +117,7 @@ sudo ./php2shell-hostcheck.sh --root /mnt/disk
 **Example output line:**
 
 ```
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records a fix for both CVE-2026-109618 and CVE-2026-109619, e.g. "SECURITY UPDATE: Remote RCE via state corruption issue".
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records a fix for both CVE-2026-109618 and CVE-2026-109619: "SECURITY UPDATE: Remote RCE via state corruption issue ... - CVE-2026-109618". Confirm the quoted item.
 ```
 
 The run can take a minute, because the tool searches the whole disk. That
