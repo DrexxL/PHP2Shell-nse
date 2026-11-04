@@ -221,6 +221,18 @@ if [[ $rc -eq 2 && $out == *"nextcloud_42"* && $out != *"No PHP binary"* ]]; the
   PASSED=$((PASSED + 1)); echo "ok    unmounted snap in image -> CHECK FAILED, never 'nothing found'"
 else FAILED=$((FAILED + 1)); echo "FAIL  unmounted snap in image (exit $rc)"; fi
 
+# Fedora, Arch and openSUSE link /snap to /var/lib/snapd/snap. PHP inside a
+# mounted snap must be reported through the link too.
+I=$T/fedsnap
+mkdir -p "$I/var/lib/snapd/snap/nextcloud/42/usr/bin" "$I/var/lib/snapd/snaps"
+ln -s var/lib/snapd/snap "$I/snap"
+fake "$I" /var/lib/snapd/snap/nextcloud/42/usr/bin/php-fpm 8.2.10
+echo "squashfs" > "$I/var/lib/snapd/snaps/nextcloud_42.snap"
+out=$(bash "$CHECK" --root "$I" 2>/dev/null); rc=$?
+if [[ $rc -eq 2 && $out == *"Snap packages that contain PHP"* && $out != *"No PHP binary"* ]]; then
+  PASSED=$((PASSED + 1)); echo "ok    snap PHP behind a /snap link -> CHECK FAILED"
+else FAILED=$((FAILED + 1)); echo "FAIL  snap PHP behind a /snap link (exit $rc)"; fi
+
 # An Apache module with an unusual name is found by its contents.
 I=$T/module
 fake "$I" /usr/lib/httpd/modules/custom_php.so 8.2.10

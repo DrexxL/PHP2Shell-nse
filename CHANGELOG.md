@@ -4,6 +4,11 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host check 1.1 (after the fourth audit)
+
+- Snap folders are found through the `/snap` link used on Fedora, Arch and
+  openSUSE, so PHP inside those snaps is reported (false PASS removed).
+
 ### Host check 1.1 (after the third audit)
 
 - An rpm database that rpm cannot open gives CHECK FAILED, not "unpackaged".

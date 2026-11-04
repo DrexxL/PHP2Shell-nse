@@ -549,16 +549,29 @@ done
 # Snaps: report mounted snaps that contain PHP, and any snap archive that
 # is not mounted (as in an offline disk image), because its contents
 # cannot be seen without unpacking it.
-if [[ -d $base/snap && -n $(find "$base/snap" -type f \( -name 'php*' -o -name 'libphp*' -o -name 'mod_php*' \) -print -quit 2>/dev/null) ]]; then
-  emit "CHECK FAILED" "-" "/snap" "storage" "" "" \
-    "Snap packages that contain PHP are not inspected. Check each snap's PHP with its publisher's security notices, or upgrade the snap."
-fi
+# /snap is a folder on Ubuntu but a link to /var/lib/snapd/snap on Fedora,
+# Arch and openSUSE, so both places are resolved inside the root first.
+snapdirs=()
+for c in /snap /var/lib/snapd/snap; do
+  r=$(safe_path "$ROOT" "$c") || continue
+  [[ -d $r ]] || continue
+  [[ " ${snapdirs[*]} " == *" $r "* ]] || snapdirs+=("$r")
+done
+for r in "${snapdirs[@]}"; do
+  if [[ -n $(find "$r" -type f \( -name 'php*' -o -name 'libphp*' -o -name 'mod_php*' \) -print -quit 2>/dev/null) ]]; then
+    emit "CHECK FAILED" "-" "${r#"$ROOT"}" "storage" "" "" \
+      "Snap packages that contain PHP are not inspected. Check each snap's PHP with its publisher's security notices, or upgrade the snap."
+  fi
+done
 unmounted=()
 for a in "$base"/var/lib/snapd/snaps/*.snap; do
   [[ -f $a ]] || continue
   n=${a##*/}; n=${n%.snap}           # name_revision
-  d="$base/snap/${n%_*}/${n##*_}"
-  [[ -n $(ls -A "$d" 2>/dev/null) ]] || unmounted+=("${n}")
+  mounted=0
+  for r in "${snapdirs[@]}"; do
+    [[ -n $(ls -A "$r/${n%_*}/${n##*_}" 2>/dev/null) ]] && mounted=1
+  done
+  ((mounted)) || unmounted+=("${n}")
 done
 if ((${#unmounted[@]})); then
   emit "CHECK FAILED" "-" "/var/lib/snapd/snaps" "storage" "" "" \
