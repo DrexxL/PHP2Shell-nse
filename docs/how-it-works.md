@@ -159,7 +159,8 @@ The host check finds the package that owns each file. Then it checks that the
 file really is the one the package installed:
 
 - The file's version number must match the package's version number.
-- On Debian and Ubuntu, the file's checksum must match the recorded one.
+- On Debian and Ubuntu, the file's checksum must also match, where the
+  package recorded one.
 
 **Example:** someone copies an old PHP program over `/usr/bin/php8.3`. The
 package record still says "8.3.36, fixed". But the file says 8.3.6. The host

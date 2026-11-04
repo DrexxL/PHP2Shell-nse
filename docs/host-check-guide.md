@@ -26,7 +26,7 @@ tool is missing, the check stops with a CHECK FAILED line that names it.
 | Alpine (apk) | Supported, if bash and the GNU tools are installed: `apk add bash findutils coreutils grep gawk`. Tested with test images. |
 | Containers | Running containers are checked from the host. Inside a container, the same rules apply as for its distribution. |
 | Windows WSL 2 | Expected to work: WSL 2 runs a real Linux kernel. Checks the PHP inside the WSL Linux system only. Windows drives are not searched. Not yet tested. |
-| Windows WSL 1 | Files only. Running processes cannot be inspected; the check reports this as CHECK FAILED. |
+| Windows WSL 1 | Expected: files only. WSL 1 is expected not to provide the process information the check needs; the check then reports a CHECK FAILED line and checks only files on disk. Not yet tested. |
 | Windows itself, macOS, BSD | Not supported. The check needs Linux's `/proc` and bash 4. Use `--root` from a Linux computer to check a mounted Linux disk instead. |
 
 **Example (Alpine container):**
@@ -106,7 +106,7 @@ The output has three parts:
 # php2shell-hostcheck 1.1 | rules 2026-11-04 | CVE-2026-109618 and CVE-2026-109619 | CVE-2026-115560 not covered
 # host web01 | checked 2026-11-04T06:32:04Z
 host|result|sapi|path|seen|php_version|package|reason
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|Changelog ... records both ...
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records both ...
 # summary: 1 PASS, 0 FAIL, 0 CHECK FAILED
 ```
 
@@ -136,7 +136,6 @@ The `sapi` field can be:
 | `cgi-fcgi` | `php-cgi`, started by the web server for each request |
 | `apache2handler` | PHP loaded inside Apache as a module (`libphp*.so` or `mod_php*.so`) |
 | `phpdbg` | PHP's debugger |
-| `embedded-module` | Another web-server module that contains PHP |
 
 ## Exit status
 
@@ -177,7 +176,9 @@ reports the running copy as "replaced or deleted on disk".
 - Network drives, Windows drives under WSL (`9p`, `drvfs`) and folders shared
   into virtual machines (`virtiofs`, `vboxsf`, `vmhgfs`) are not searched.
   Each one is listed in the output as `# not searched: <mount point> (<type>)`.
-  The filesystem that holds the starting folder is always searched.
+  The filesystem that holds the starting folder is always searched. If that
+  filesystem is itself one of these types (for example `--root` on a
+  network drive), other mounts of the same type are searched too.
 - The check covers CVE-2026-109618 and CVE-2026-109619 only. It does not
   cover CVE-2026-115560.
 - A PASS from a changelog means the package maker says the fix is included.

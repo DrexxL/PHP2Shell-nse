@@ -4,6 +4,14 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host check 1.1 (after the third audit)
+
+- An rpm database that rpm cannot open gives CHECK FAILED, not "unpackaged".
+- Snap archives that are not mounted (as in offline images) are reported.
+- A missing `/proc` is reported as such, not as a missing tool.
+- The "no PHP found" PASS appears only when nothing else is unresolved.
+- Package names in reason text no longer carry the multiarch suffix.
+
 ### Host check 1.1 (after the second audit)
 
 - rpm: the image's own database location (`/var/lib/rpm` or

@@ -135,7 +135,7 @@ sapi_of() {
     libphp*|mod_php*) echo apache2handler ;;
     phpdbg*)  echo phpdbg ;;
     php|php[0-9]*) echo cli ;;
-    *.so*)    [[ $1 == *apache* || $1 == *httpd* ]] && echo apache2handler || echo embedded-module ;;
+    *.so*)    echo apache2handler ;;   # only .so files under apache/httpd paths reach here
     *) echo unknown ;;
   esac
 }
@@ -202,10 +202,21 @@ rpm_q() { # root dbpath args...: run rpm against that root and database
   rpm ${root:+--root "$root"} --dbpath "$db" "$@"
 }
 
+declare -A RPM_READABLE
+rpm_db_readable() { # root db: 0 if rpm can open that database
+  local key="$1|$2" err
+  if [[ -z ${RPM_READABLE[$key]+x} ]]; then
+    err=$(rpm_q "$1" "$2" -qa --qf '' 2>&1 >/dev/null)
+    if [[ $? -eq 0 && $err != *error* ]]; then RPM_READABLE[$key]=1; else RPM_READABLE[$key]=0; fi
+  fi
+  [[ ${RPM_READABLE[$key]} == 1 ]]
+}
+
 rpm_owner() {
   local root=$1 p=$2 out db
   db=$(rpm_dbpath "$root") || return 1
   command -v rpm >/dev/null || { echo "rpm-unavailable|||"; return 0; }
+  rpm_db_readable "$root" "$db" || { echo "rpm-unreadable|||$db"; return 0; }
   out=$(rpm_q "$root" "$db" -qf --qf '%{NAME}|%{VERSION}-%{RELEASE}\n' "$p" 2>/dev/null) || return 1
   echo "rpm|${out%%$'\n'*}|rpm database $db"
 }
@@ -309,6 +320,11 @@ evaluate() {
   IFS='|' read -r mgr pkg pkgver pkgev <<<"$owner"
   pkgdesc="-"; [[ $mgr == dpkg || $mgr == rpm || $mgr == apk ]] && pkgdesc="$mgr:${pkg%%:*} $pkgver"
 
+  if [[ $mgr == rpm-unreadable ]]; then
+    emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "-" \
+      "An rpm database is present ($pkgev) but rpm could not open it (damaged, or a format this rpm cannot read), so package ownership cannot be read. Run the check with an rpm that matches the system."
+    return
+  fi
   if [[ $mgr == rpm-unavailable ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "-" \
       "An rpm database is present but the rpm tool is not installed here, so package ownership cannot be read. Run the check on a system with rpm."
@@ -378,10 +394,10 @@ evaluate() {
       "Unpackaged build, version precedes $fixed, and no package record of a fix exists. If it was patched by hand, document that; otherwise rebuild or upgrade."
   elif [[ $mgr == apk ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "Version precedes $fixed. Alpine keeps no package changelog on the system, so a backported fix cannot be ruled out locally. Check the Alpine security database for $pkg $pkgver, or upgrade."
+      "Version precedes $fixed. Alpine keeps no package changelog on the system, so a backported fix cannot be ruled out locally. Check the Alpine security database for ${pkg%%:*} $pkgver, or upgrade."
   elif [[ $CL_STATE == UNREADABLE ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "Version precedes $fixed and the package changelog could not be read (documentation may be excluded). Check the vendor security notice for $pkg $pkgver."
+      "Version precedes $fixed and the package changelog could not be read (documentation may be excluded). Check the vendor security notice for ${pkg%%:*} $pkgver."
   else
     emit FAIL "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
       "Version precedes $fixed and the changelog ($CL_SRC) has no record of either CVE. Update the package."
@@ -414,6 +430,12 @@ missing=""
 for t in find grep awk sed zcat md5sum stat od head cut sort tr readlink mktemp; do
   command -v "$t" >/dev/null || missing+=" $t"
 done
+if [[ ! -r /proc/self/mounts ]]; then
+  emit "CHECK FAILED" "-" "-" "-" "" "" \
+    "/proc is not mounted or not readable, so neither processes nor filesystems can be checked reliably. Mount /proc and re-run."
+  printf '# summary: %d PASS, %d FAIL, %d CHECK FAILED\n' "$NPASS" "$NFAIL" "$NCHK"
+  exit 2
+fi
 if [[ -z $missing ]]; then
   find / -maxdepth 0 \( -fstype nfs -prune \) -o -print0 >/dev/null 2>&1 || missing+=" find(GNU: -fstype, -print0)"
   stat -L -c %d:%i / >/dev/null 2>&1 || missing+=" stat(GNU: -L -c)"
@@ -430,7 +452,7 @@ fi
 
 if [[ $LIVE -eq 1 ]] && ! readlink /proc/self/ns/mnt >/dev/null 2>&1; then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
-    "Running processes could not be inspected: /proc gives no mount-namespace information (for example under WSL1, or with /proc not mounted). Only files on disk were checked."
+    "Running processes could not be inspected: /proc gives no mount-namespace information (as expected under WSL 1). Only files on disk were checked."
 fi
 
 if [[ $LIVE -eq 1 ]] && readlink /proc/self/ns/mnt >/dev/null 2>&1; then
@@ -522,15 +544,26 @@ done
 
 for s in "${STORES[@]}"; do
   [[ -d $base/$s ]] && emit "CHECK FAILED" "-" "/$s" "storage" "" "" \
-    "Container, VM or snap storage is not inspected. Run this checker inside each container, or with --root against each extracted image."
+    "Container or VM storage is not inspected. Run this checker inside each container, or with --root against each extracted image."
 done
-for s in "${SNAPDIRS[@]}"; do
-  [[ -d $base/$s ]] || continue
-  if [[ -n $(find "$base/$s" -type f \( -name 'php*' -o -name 'libphp*' -o -name 'mod_php*' \) -print -quit 2>/dev/null) ]]; then
-    emit "CHECK FAILED" "-" "/$s" "storage" "" "" \
-      "Snap packages that contain PHP are not inspected. Check each snap's PHP with its publisher's security notices, or upgrade the snap."
-  fi
+# Snaps: report mounted snaps that contain PHP, and any snap archive that
+# is not mounted (as in an offline disk image), because its contents
+# cannot be seen without unpacking it.
+if [[ -d $base/snap && -n $(find "$base/snap" -type f \( -name 'php*' -o -name 'libphp*' -o -name 'mod_php*' \) -print -quit 2>/dev/null) ]]; then
+  emit "CHECK FAILED" "-" "/snap" "storage" "" "" \
+    "Snap packages that contain PHP are not inspected. Check each snap's PHP with its publisher's security notices, or upgrade the snap."
+fi
+unmounted=()
+for a in "$base"/var/lib/snapd/snaps/*.snap; do
+  [[ -f $a ]] || continue
+  n=${a##*/}; n=${n%.snap}           # name_revision
+  d="$base/snap/${n%_*}/${n##*_}"
+  [[ -n $(ls -A "$d" 2>/dev/null) ]] || unmounted+=("${n}")
 done
+if ((${#unmounted[@]})); then
+  emit "CHECK FAILED" "-" "/var/lib/snapd/snaps" "storage" "" "" \
+    "${#unmounted[@]} snap package(s) are not mounted, so their contents (which may include PHP) were not inspected: ${unmounted[*]:0:5}. Check on the running system, or unpack each snap and use --root."
+fi
 for s in "$ROOT"/home/*/.local/share/containers "$ROOT"/root/.local/share/containers; do
   [[ -d $s ]] && emit "CHECK FAILED" "-" "${s#"$ROOT"}" "storage" "" "" \
     "Rootless container storage is not inspected. Run this checker inside each container."
@@ -541,7 +574,7 @@ walk_errors=$(grep -v 'No such file or directory' "$errlog" | wc -l)
 if ((walk_errors > 0)); then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
     "The filesystem walk was incomplete: $walk_errors error(s), first: $(grep -v 'No such file or directory' "$errlog" | head -1 | cut -c1-120). Fix access and re-run."
-elif [[ ${#ORDER[@]} -eq 0 && $EUID -eq 0 ]]; then
+elif [[ ${#ORDER[@]} -eq 0 && $EUID -eq 0 && $NCHK -eq 0 ]]; then
   emit PASS "-" "-" "-" "" "" "No PHP binary, module or process found on the inspected filesystems."
 fi
 

@@ -68,7 +68,7 @@ computer is contacted.
 A test that can never fail proves nothing. Both suites were checked by
 breaking a tool on purpose (changing the 8.2 fixed version to 8.2.5) and
 running the suite again. The host check suite then reported 4 failures and
-the network scan suite 5 failures, as expected.
+the network scan suite 6 failures, as expected.
 
 ## Other testing done during development
 

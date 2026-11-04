@@ -108,7 +108,7 @@ sudo ./php2shell-hostcheck.sh --root /mnt/disk
 **Example output line:**
 
 ```
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|Changelog /usr/share/doc/php8.3-common/changelog.Debian.gz records both CVE-2026-109618 and CVE-2026-109619, e.g. "- debian/patches/CVE-2026-109618_109619.patch: Avoid state corruption via ..."
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records both CVE-2026-109618 and CVE-2026-109619, e.g. "- debian/patches/CVE-2026-109618_109619.patch: Avoid state corruption via".
 ```
 
 The run can take a minute, because the tool searches the whole disk. That
@@ -170,10 +170,11 @@ Read these before you rely on a result.
   was tested with real rpm packages and databases (rpm 4.18), in both
   standard database locations. It has not yet run on an actual Red Hat,
   Rocky or SUSE server, or on the older database format of Red Hat 7 and 8.
-- **Container storage is not opened.** Docker, Podman, LXD, snap and similar
-  storage folders are listed as CHECK FAILED. Run the host check inside each
-  container, or use `--root` on each extracted image. Running containers are
-  checked through their processes.
+- **Container storage is not opened.** Docker, Podman, LXD and similar
+  storage folders are listed as CHECK FAILED. So are snap packages that
+  contain PHP, and snap packages that are not mounted (as in an offline disk
+  image). Run the host check inside each container, or use `--root` on each
+  extracted image. Running containers are checked through their processes.
 - **Root is needed.** Without root, some files and processes stay hidden, so
   the run reports CHECK FAILED, never says "nothing found", and never exits
   with status 0.

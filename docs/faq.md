@@ -71,8 +71,9 @@ Yes. Export or extract it into a folder, then run the host check with
   PHP for Windows (`php.exe`), because that is a different kind of program
   with no Linux package record. Windows drives (`/mnt/c` and so on) are not
   searched, and the output lists them as `# not searched`.
-- **WSL 1** is not supported for running processes. The check says so with
-  a CHECK FAILED line, and checks only files on disk.
+- **WSL 1** is expected not to support checking running processes. In that
+  case the check says so with a CHECK FAILED line, and checks only files on
+  disk. Neither WSL version has been tested yet.
 
 ### Which Linux systems does the host check support?
 

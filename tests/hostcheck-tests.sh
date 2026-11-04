@@ -203,6 +203,24 @@ else
   echo "skip  rpm package tests (needs rpm and rpmbuild)"
 fi
 
+# An rpm database that rpm cannot open must not turn into "unpackaged".
+if command -v rpm >/dev/null; then
+  I=$T/rpmbad
+  fake "$I" /usr/bin/php 8.2.10
+  mkdir -p "$I/var/lib/rpm"; echo "not a database" > "$I/var/lib/rpm/rpmdb.sqlite"
+  expect "unopenable rpm database -> CHECK FAILED" "$I" /usr/bin/php "CHECK FAILED" "rpm could not open it"
+fi
+
+# Snap archives that are not mounted (as in an offline image) are reported,
+# and the run never claims that nothing was found.
+I=$T/snapimg
+mkdir -p "$I/var/lib/snapd/snaps" "$I/snap/nextcloud/42"
+echo "squashfs" > "$I/var/lib/snapd/snaps/nextcloud_42.snap"
+out=$(bash "$CHECK" --root "$I" 2>/dev/null); rc=$?
+if [[ $rc -eq 2 && $out == *"nextcloud_42"* && $out != *"No PHP binary"* ]]; then
+  PASSED=$((PASSED + 1)); echo "ok    unmounted snap in image -> CHECK FAILED, never 'nothing found'"
+else FAILED=$((FAILED + 1)); echo "FAIL  unmounted snap in image (exit $rc)"; fi
+
 # An Apache module with an unusual name is found by its contents.
 I=$T/module
 fake "$I" /usr/lib/httpd/modules/custom_php.so 8.2.10
