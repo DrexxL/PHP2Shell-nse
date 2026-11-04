@@ -196,11 +196,13 @@ Read these before you rely on a result.
   only inside the image, and package records are read only from regular
   files, so the checking computer's own files are not read in place of the
   image's.
-- **A changelog is a record, not a test.** PASS from a changelog means the
-  package maker says the fix is included. The tools do not test the fix.
-- **Only nmap 7.94 was used for testing.** Every nmap function the script
-  uses was checked against the nmap 7.80 source code, but the script has not
-  been run on 7.80.
+- **A changelog is a record, not a test.** PASS from a changelog means an
+  entry in the package's changelog states a fix for both CVEs. The tools do
+  not test the fix itself.
+- **nmap 7.94 was used for testing here.** Every nmap function the script
+  uses was checked against the nmap 7.80 source code. An external review
+  (Codex, November 2026) reports that the network scan tests also passed on
+  nmap 7.80; that run was not repeated here.
 
 ## License
 

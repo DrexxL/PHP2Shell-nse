@@ -130,5 +130,7 @@ unsure about a system, scan it during a maintenance window.
   fixed.
 - **Backports are invisible.** A distribution can fix the bug without
   changing the number in the banner.
-- **Tested with nmap 7.94 only.** The script uses only functions that also
-  exist in nmap 7.80, but it has not been run there.
+- **Tested here with nmap 7.94.** Every nmap function the script uses was
+  checked against the nmap 7.80 source code. An external review (Codex,
+  November 2026) reports that the tests also passed on nmap 7.80; that run
+  was not repeated here.
