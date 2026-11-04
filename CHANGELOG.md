@@ -4,6 +4,30 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host check 1.1 (after the second audit)
+
+- rpm: the image's own database location (`/var/lib/rpm` or
+  `/usr/lib/sysimage/rpm`) is passed to rpm, because rpm's built-in default
+  differs between builds. Found by testing with real rpm packages.
+- Stops with a clear message if bash is older than 4 (exit 69) or if GNU
+  `find`/`stat` are missing (CHECK FAILED), for example on BusyBox systems.
+- Reports when running processes cannot be inspected (for example WSL 1).
+- Windows drives under WSL and folders shared into virtual machines are not
+  searched; every skipped mount is listed. The filesystem holding the start
+  folder is always searched.
+- A package whose version cannot be read gives CHECK FAILED, not PASS.
+- A running program that cannot be located inside its chroot gives CHECK
+  FAILED.
+- No "nothing found" PASS when not run as root.
+- Snap storage is reported only if it contains PHP.
+
+### Network scan (after the second audit)
+
+- Works again on nmap releases before 7.94 (`url.ascii_hostname` is used only
+  where it exists).
+- When there is no response, the target line says so instead of showing a
+  made-up transport.
+
 ### Host check 1.1
 
 - A file must match its owning package (version, and dpkg checksum where

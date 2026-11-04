@@ -163,22 +163,31 @@ during a maintenance window.
 
 Read these before you rely on a result.
 
-- **Not tested on rpm systems.** The rpm part of the host check (Red Hat,
-  Rocky, SUSE) has not been tested yet. Check its results by hand the first
-  time.
+- **Linux only.** The host check runs on Linux, including Windows' WSL 2.
+  It needs bash 4 and the standard GNU tools. It cannot check PHP for
+  Windows. See [Supported systems](docs/host-check-guide.md#supported-systems).
+- **rpm tested with built packages, not a real Red Hat host.** The rpm part
+  was tested with real rpm packages and databases (rpm 4.18), in both
+  standard database locations. It has not yet run on an actual Red Hat,
+  Rocky or SUSE server, or on the older database format of Red Hat 7 and 8.
 - **Container storage is not opened.** Docker, Podman, LXD, snap and similar
   storage folders are listed as CHECK FAILED. Run the host check inside each
   container, or use `--root` on each extracted image. Running containers are
   checked through their processes.
 - **Root is needed.** Without root, some files and processes stay hidden, so
-  the run reports CHECK FAILED and never says "nothing found".
+  the run reports CHECK FAILED, never says "nothing found", and never exits
+  with status 0.
+- **Some filesystems are not searched.** Network drives, Windows drives under
+  WSL and folders shared into virtual machines are skipped. Each skipped
+  mount is listed in the output as `# not searched: ...`.
 - **Images stay sealed.** With `--root`, links inside the image are followed
   only inside the image, so the checking computer's own files can never be
   mistaken for the image's.
 - **A changelog is a record, not a test.** PASS from a changelog means the
   package maker says the fix is included. The tools do not test the fix.
-- **Only nmap 7.94 was used for testing.** The script uses only functions
-  that also exist in nmap 7.80, but it has not been run there.
+- **Only nmap 7.94 was used for testing.** Every nmap function the script
+  uses was checked against the nmap 7.80 source code, but the script has not
+  been run on 7.80.
 
 ## License
 

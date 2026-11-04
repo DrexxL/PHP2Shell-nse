@@ -11,10 +11,30 @@ PHP2Shell. Use its results for your records. To learn how it decides, read
 | A Linux server | The tool reads Linux process and package information. |
 | Bash 4 or newer | Standard on current Linux distributions. |
 | Root access | Without root, some processes and files stay hidden. |
-| Standard tools: `find`, `grep`, `awk`, `sed`, `zcat`, `md5sum`, `stat`, `od` | Present on almost every Linux system. |
+| GNU tools: `find`, `grep`, `awk`, `sed`, `zcat`, `md5sum`, `stat`, `od`, `readlink`, `mktemp` | Present on almost every Linux system. The BusyBox versions in small images lack some options. |
 | `rpm` (Red Hat, SUSE and similar only) | Needed to read rpm package records. |
 
-You do **not** need internet access, PHP knowledge or extra software.
+You do **not** need internet access, PHP knowledge or extra software. If a
+tool is missing, the check stops with a CHECK FAILED line that names it.
+
+## Supported systems
+
+| System | Status |
+|---|---|
+| Debian, Ubuntu and other dpkg systems | Supported. Tested live on Ubuntu 24.04 and with test images. |
+| Red Hat, Rocky, AlmaLinux, Fedora, SUSE (rpm) | Supported. Tested with real rpm packages and rpm 4.18 databases in `/var/lib/rpm` and `/usr/lib/sysimage/rpm`. Not yet run on a real Red Hat or SUSE server, or on the older Red Hat 7 and 8 database format. |
+| Alpine (apk) | Supported, if bash and the GNU tools are installed: `apk add bash findutils coreutils grep gawk`. Tested with test images. |
+| Containers | Running containers are checked from the host. Inside a container, the same rules apply as for its distribution. |
+| Windows WSL 2 | Expected to work: WSL 2 runs a real Linux kernel. Checks the PHP inside the WSL Linux system only. Windows drives are not searched. Not yet tested. |
+| Windows WSL 1 | Files only. Running processes cannot be inspected; the check reports this as CHECK FAILED. |
+| Windows itself, macOS, BSD | Not supported. The check needs Linux's `/proc` and bash 4. Use `--root` from a Linux computer to check a mounted Linux disk instead. |
+
+**Example (Alpine container):**
+
+```bash
+apk add bash findutils coreutils grep gawk
+./php2shell-hostcheck.sh
+```
 
 ## Check a running server
 
@@ -128,6 +148,7 @@ Scripts and monitoring tools can use the exit status:
 | 1 | At least one FAIL. |
 | 2 | No FAIL, but at least one CHECK FAILED. |
 | 64 | The command-line options were wrong. |
+| 69 | The shell is not bash 4 or newer. |
 | 70 | A temporary file could not be created. |
 
 **Example:** run the check from a scheduler and alert on anything but 0:
@@ -151,9 +172,13 @@ reports the running copy as "replaced or deleted on disk".
 
 ## Limits
 
-- The rpm part has not been tested on a real rpm system yet.
+- The rpm part was tested with real rpm packages and databases, but not yet
+  on a real Red Hat or SUSE server.
+- Network drives, Windows drives under WSL (`9p`, `drvfs`) and folders shared
+  into virtual machines (`virtiofs`, `vboxsf`, `vmhgfs`) are not searched.
+  Each one is listed in the output as `# not searched: <mount point> (<type>)`.
+  The filesystem that holds the starting folder is always searched.
 - The check covers CVE-2026-109618 and CVE-2026-109619 only. It does not
   cover CVE-2026-115560.
-- Network filesystems (NFS, CIFS, SMB, SSHFS) are not searched.
 - A PASS from a changelog means the package maker says the fix is included.
   The tool does not test the fix itself.

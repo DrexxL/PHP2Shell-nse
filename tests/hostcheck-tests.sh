@@ -118,6 +118,15 @@ mkdir -p "$I/usr/share/doc"
 ln -s "$T/pkg/usr/share/doc/php8.3-cli" "$I/usr/share/doc/php8.3-cli"
 expect "link pointing outside image is not followed" "$I" /usr/bin/php8.3 "CHECK FAILED" "could not be read"
 
+# A package whose version cannot be read must not give PASS.
+I=$T/nover
+fake "$I" /usr/bin/php8.3 8.3.6
+mkdir -p "$I/var/lib/dpkg/info" "$I/usr/share/doc/php8.3-cli"
+echo /usr/bin/php8.3 > "$I/var/lib/dpkg/info/php8.3-cli.list"
+: > "$I/var/lib/dpkg/status"
+printf '  * CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-cli/changelog.Debian.gz"
+expect "package version unreadable -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "version could not be read"
+
 # Fallback to php<branch>-common only at the same package version.
 I=$T/common
 fake "$I" /usr/bin/php8.3 8.3.6
@@ -138,11 +147,60 @@ fake "$I" /usr/bin/php83 8.3.36
 mkdir -p "$I/lib/apk/db"
 printf 'P:php83\nV:8.3.36-r0\nF:usr/bin\nR:php83\n\n' > "$I/lib/apk/db/installed"
 expect "Alpine at fix -> PASS" "$I" /usr/bin/php83 PASS
-if ! command -v rpm >/dev/null; then
-  I=$T/rpm
-  fake "$I" /usr/bin/php 8.2.10
-  mkdir -p "$I/var/lib/rpm"; : > "$I/var/lib/rpm/Packages"
-  expect "rpm database without rpm tool -> CHECK FAILED" "$I" /usr/bin/php "CHECK FAILED" "rpm tool is not installed"
+# An rpm database checked from a computer without the rpm tool. If rpm is
+# installed here, hide it by running with a PATH that leaves it out.
+I=$T/rpm
+fake "$I" /usr/bin/php 8.2.10
+mkdir -p "$I/var/lib/rpm"; : > "$I/var/lib/rpm/Packages"
+NORPM=$T/norpm-bin; mkdir -p "$NORPM"
+for f in /usr/local/bin/* /usr/bin/* /bin/*; do
+  case ${f##*/} in rpm*) continue ;; esac
+  [[ -e $NORPM/${f##*/} ]] || ln -s "$f" "$NORPM/${f##*/}" 2>/dev/null
+done
+line=$(PATH=$NORPM bash "$CHECK" --root "$I" 2>/dev/null | awk -F'|' '$4 == "/usr/bin/php"')
+if [[ $line == *"CHECK FAILED"*"rpm tool is not installed"* ]]; then
+  PASSED=$((PASSED + 1)); echo "ok    rpm database without rpm tool -> CHECK FAILED"
+else
+  FAILED=$((FAILED + 1)); echo "FAIL  rpm database without rpm tool -> CHECK FAILED"
+  echo "      got  ${line:-<no line>}"
+fi
+
+# Real rpm packages, built with rpmbuild and installed into test images,
+# with the rpm database in each of its two standard places.
+rpm_pkg() { # topdir name version release path binversion changelog-line
+  local top=$1 spec="$1/$2.spec"
+  mkdir -p "$top"
+  {
+    echo '%global debug_package %{nil}'
+    echo '%global __os_install_post %{nil}'
+    echo "Name: $2"; echo "Version: $3"; echo "Release: $4"
+    echo 'Summary: test package'; echo 'License: Apache-2.0'
+    echo '%description'; echo 'Test package for hostcheck-tests.sh.'
+    echo '%install'
+    echo "mkdir -p %{buildroot}$(dirname "$5")"
+    echo "printf '\\177ELF\\0\\0junk\\0X-Powered-By: PHP/$6\\0end' > %{buildroot}$5"
+    echo '%files'; echo "$5"
+    echo '%changelog'
+    echo "* Mon Oct 26 2026 Test <test@example.org> - $3-$4"
+    echo "- $7"
+  } > "$spec"
+  rpmbuild -bb --define "_topdir $top" "$spec" >/dev/null 2>&1
+}
+if command -v rpm >/dev/null && command -v rpmbuild >/dev/null; then
+  TOP=$T/rpmbuild
+  rpm_pkg "$TOP" php-cli 8.2.10 1.el9 /usr/bin/php 8.2.10 "Backport fix for CVE-2026-109618 and CVE-2026-109619"
+  rpm_pkg "$TOP" php-fpm 8.4.20 1.el9 /usr/sbin/php-fpm 8.4.20 "Rebuild"
+  rpm_pkg "$TOP" php-cgi 8.3.36 1.el9 /usr/bin/php-cgi 8.3.6 "Update to 8.3.36"
+  for db in /var/lib/rpm /usr/lib/sysimage/rpm; do
+    I=$T/rpmimg${db//\//_}; mkdir -p "$I"
+    rpm --root "$I" --dbpath "$db" --initdb
+    rpm --root "$I" --dbpath "$db" -i --nodeps --noscripts --ignorearch "$TOP"/RPMS/*/*.rpm >/dev/null 2>&1
+    expect "rpm ($db): backport in changelog -> PASS" "$I" /usr/bin/php PASS "rpm changelog of package php-cli"
+    expect "rpm ($db): no fix in changelog -> FAIL"   "$I" /usr/sbin/php-fpm FAIL "no record of either CVE"
+    expect "rpm ($db): file differs from package"     "$I" /usr/bin/php-cgi "CHECK FAILED" "not the packaged one"
+  done
+else
+  echo "skip  rpm package tests (needs rpm and rpmbuild)"
 fi
 
 # An Apache module with an unusual name is found by its contents.
@@ -176,8 +234,13 @@ if [[ $EUID -eq 0 ]] && command -v setpriv >/dev/null; then
   if [[ $rc -eq 2 && $out == *"walk was incomplete"* && $out != *"No PHP binary"* ]]; then
     PASSED=$((PASSED + 1)); echo "ok    unreadable folder -> CHECK FAILED, never 'nothing found'"
   else FAILED=$((FAILED + 1)); echo "FAIL  unreadable folder (exit $rc)"; fi
+  I=$T/empty-user; mkdir -p "$I/usr/bin"
+  out=$(setpriv --reuid=65534 --regid=65534 --clear-groups bash "$T/hc.sh" --root "$I" 2>/dev/null); rc=$?
+  if [[ $rc -eq 2 && $out != *"No PHP binary"* ]]; then
+    PASSED=$((PASSED + 1)); echo "ok    not root -> never 'nothing found', exit 2"
+  else FAILED=$((FAILED + 1)); echo "FAIL  not root -> never 'nothing found' (exit $rc)"; fi
 else
-  echo "skip  unreadable folder test (needs root and setpriv)"
+  echo "skip  unreadable folder and non-root tests (need root and setpriv)"
 fi
 
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"

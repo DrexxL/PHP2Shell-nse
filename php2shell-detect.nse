@@ -233,7 +233,9 @@ local function host_header_sent(host, port, vhost)
   if vhost then return vhost end
   local global = stdnse.get_script_args("http.host")
   if global then return global end
-  local name   = url.ascii_hostname(host)
+  -- url.ascii_hostname exists only from nmap 7.94; older releases use the
+  -- plain host name, as their http library does.
+  local name   = (rawget(url, "ascii_hostname") or stdnse.get_hostname)(host)
   local scheme = url.get_default_scheme(port)
   if scheme then
     local ssl_port = shortport.ssl(host, port)
@@ -270,7 +272,7 @@ action = function(host, port)
     end
   end
   -- Report the transport actually used, not a guess from the port number.
-  local scheme = (seen.ssl == true and "https") or (seen.ssl == false and "http") or "unknown"
+  local scheme = (seen.ssl == true and "https") or (seen.ssl == false and "http") or nil
 
   if not any_response then
     out.result = FAILED
@@ -300,9 +302,13 @@ action = function(host, port)
     out.action = act
   end
 
-  out.target = ("%s://%s:%d  Host: %s  SNI: %s"):format(
-    scheme, host.ip, port.number, host_header_sent(host, port, vhost),
-    (scheme == "https" and host.targetname) or "none")
+  if scheme then
+    out.target = ("%s://%s:%d  Host: %s  SNI: %s"):format(
+      scheme, host.ip, port.number, host_header_sent(host, port, vhost),
+      (scheme == "https" and host.targetname) or "none")
+  else
+    out.target = ("%s:%d (no response, transport unknown)"):format(host.ip, port.number)
+  end
   out.evidence   = evidence
   out.rules      = ("PHP security releases of 2026-10-21 (8.2.35, 8.3.36, 8.4.27, 8.5.12); "
                  .. "rule set dated %s"):format(RULES_DATE)

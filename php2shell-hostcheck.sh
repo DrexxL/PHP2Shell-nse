@@ -34,7 +34,8 @@
 #   sudo ./php2shell-hostcheck.sh --root DIR   check a mounted disk or image
 #
 # Exit status: 0 = all PASS. 1 = at least one FAIL. 2 = no FAIL, but at least
-# one CHECK FAILED. 64 = wrong command-line options.
+# one CHECK FAILED. 64 = wrong command-line options. 70 = a temporary file
+# could not be created.
 #
 # RULES dated 2026-11-04: fixed in 8.2.35, 8.3.36, 8.4.27 and 8.5.12 (PHP
 # security releases of 21 October 2026). PHP's warning covers branches 8.2
@@ -42,8 +43,15 @@
 # result is CHECK FAILED unless the changelog lists the fix. A third bug,
 # CVE-2026-115560, is NOT checked.
 
+# Stop early, with a clear message, if this is not bash 4 or newer.
+if [ -z "${BASH_VERSINFO:-}" ] || [ "${BASH_VERSINFO[0]}" -lt 4 ]; then
+  echo "php2shell-hostcheck needs bash 4 or newer (this is ${BASH_VERSION:-not bash})." >&2
+  exit 69
+fi
+
 set -o pipefail
 export LC_ALL=C
+
 
 CHECKER_VERSION="1.1"
 RULES_DATE="2026-11-04"
@@ -127,7 +135,7 @@ sapi_of() {
     libphp*|mod_php*) echo apache2handler ;;
     phpdbg*)  echo phpdbg ;;
     php|php[0-9]*) echo cli ;;
-    *.so*)    echo embedded-module ;;
+    *.so*)    [[ $1 == *apache* || $1 == *httpd* ]] && echo apache2handler || echo embedded-module ;;
     *) echo unknown ;;
   esac
 }
@@ -175,12 +183,31 @@ dpkg_owner() {
   echo "dpkg|$pkg|$ver|${f#"$root"}"
 }
 
+# rpm_dbpath ROOT: the rpm database folder inside ROOT. rpm's built-in
+# default differs between builds (for example ~/.rpmdb on Debian), so the
+# image's own database location is always passed to rpm explicitly.
+rpm_dbpath() {
+  local d real
+  for d in /usr/lib/sysimage/rpm /var/lib/rpm; do
+    real=$(safe_path "$1" "$d") || continue
+    if [[ -e $real/rpmdb.sqlite || -e $real/Packages || -e $real/Packages.db ]]; then
+      echo "${real#"$1"}"; return 0
+    fi
+  done
+  return 1
+}
+
+rpm_q() { # root dbpath args...: run rpm against that root and database
+  local root=$1 db=$2; shift 2
+  rpm ${root:+--root "$root"} --dbpath "$db" "$@"
+}
+
 rpm_owner() {
-  local root=$1 p=$2 out
-  [[ -d $root/var/lib/rpm || -d $root/usr/lib/sysimage/rpm ]] || return 1
+  local root=$1 p=$2 out db
+  db=$(rpm_dbpath "$root") || return 1
   command -v rpm >/dev/null || { echo "rpm-unavailable|||"; return 0; }
-  out=$(rpm ${root:+--root "$root"} -qf --qf '%{NAME}|%{VERSION}-%{RELEASE}\n' "$p" 2>/dev/null) || return 1
-  echo "rpm|${out%%$'\n'*}|rpm database"
+  out=$(rpm_q "$root" "$db" -qf --qf '%{NAME}|%{VERSION}-%{RELEASE}\n' "$p" 2>/dev/null) || return 1
+  echo "rpm|${out%%$'\n'*}|rpm database $db"
 }
 
 apk_owner() {
@@ -226,8 +253,9 @@ changelog_scan() {
       done
       [[ -n $CL_SRC ]] || return ;;
     rpm)
-      text=$(rpm ${root:+--root "$root"} -q --changelog "$pkg" 2>/dev/null) || return
-      CL_SRC="rpm changelog of $pkg" ;;
+      local db; db=$(rpm_dbpath "$root") || return
+      text=$(rpm_q "$root" "$db" -q --changelog "$pkg" 2>/dev/null) || return
+      CL_SRC="rpm changelog of package $pkg" ;;
     *) return ;;
   esac
   CL_IDS=$(grep -ohE "$CVE_RE" <<<"$text" | sort -u | tr '\n' ' ')
@@ -271,9 +299,15 @@ evaluate() {
   ver=${full%%[!0-9.]*}; ver=${ver%.}; suffix=${full#"$ver"}
   branch=$(cut -d. -f1-2 <<<"$ver")
 
+  if [[ $root == /proc/* && ! -e $root$p ]]; then
+    emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "-" \
+      "The file cannot be found inside the process's root folder (for example, the program runs in a chroot), so its package record cannot be read. Run the checker inside that environment."
+    return
+  fi
+
   owner=$(pkg_owner "$root" "$p")
   IFS='|' read -r mgr pkg pkgver pkgev <<<"$owner"
-  pkgdesc="-"; [[ $mgr == dpkg || $mgr == rpm || $mgr == apk ]] && pkgdesc="$mgr:$pkg $pkgver"
+  pkgdesc="-"; [[ $mgr == dpkg || $mgr == rpm || $mgr == apk ]] && pkgdesc="$mgr:${pkg%%:*} $pkgver"
 
   if [[ $mgr == rpm-unavailable ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "-" \
@@ -282,6 +316,11 @@ evaluate() {
   fi
 
   # The file must be the one the package installed.
+  if [[ $pkgdesc != - && -z $pkgver ]]; then
+    emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
+      "The file belongs to package ${pkg%%:*}, but the package's version could not be read, so the file cannot be matched to it. Check the package database."
+    return
+  fi
   if [[ $pkgdesc != - ]]; then
     up=$(pkg_upstream "$pkgver")
     if [[ -n $up && $(vcmp "$ver" "$up") -ne 0 ]]; then
@@ -307,7 +346,7 @@ evaluate() {
   fi
   if [[ $CL_STATE == FOUND && $CL_IDS == *"$CVE_A"* && $CL_IDS == *"$CVE_B"* ]]; then
     emit PASS "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "Changelog $CL_SRC records both $CVE_A and $CVE_B, e.g. \"$CL_QUOTE\"."
+      "The changelog ($CL_SRC) records both $CVE_A and $CVE_B, e.g. \"$CL_QUOTE\"."
     return
   fi
 
@@ -367,10 +406,34 @@ printf '# php2shell-hostcheck %s | rules %s | %s and %s | CVE-2026-115560 not co
 printf '# host %s | checked %s\n' "$HOST" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'host|result|sapi|path|seen|php_version|package|reason\n'
 
+# The checker relies on GNU find and stat and a few other standard tools.
+# BusyBox versions (for example in a stock Alpine container) lack some of
+# the options used, so stop with a clear CHECK FAILED instead of a partial
+# search.
+missing=""
+for t in find grep awk sed zcat md5sum stat od head cut sort tr readlink mktemp; do
+  command -v "$t" >/dev/null || missing+=" $t"
+done
+if [[ -z $missing ]]; then
+  find / -maxdepth 0 \( -fstype nfs -prune \) -o -print0 >/dev/null 2>&1 || missing+=" find(GNU: -fstype, -print0)"
+  stat -L -c %d:%i / >/dev/null 2>&1 || missing+=" stat(GNU: -L -c)"
+fi
+if [[ -n $missing ]]; then
+  emit "CHECK FAILED" "-" "-" "-" "" "" \
+    "Required tools are missing or too limited:$missing. Install GNU findutils and coreutils (on Alpine: apk add bash findutils coreutils grep gawk) and re-run."
+  printf '# summary: %d PASS, %d FAIL, %d CHECK FAILED\n' "$NPASS" "$NFAIL" "$NCHK"
+  exit 2
+fi
+
 [[ $EUID -ne 0 ]] && emit "CHECK FAILED" "-" "-" "-" "" "" \
   "Not run as root: some processes or files may not have been inspected. Re-run as root."
 
-if [[ $LIVE -eq 1 ]]; then
+if [[ $LIVE -eq 1 ]] && ! readlink /proc/self/ns/mnt >/dev/null 2>&1; then
+  emit "CHECK FAILED" "-" "-" "-" "" "" \
+    "Running processes could not be inspected: /proc gives no mount-namespace information (for example under WSL1, or with /proc not mounted). Only files on disk were checked."
+fi
+
+if [[ $LIVE -eq 1 ]] && readlink /proc/self/ns/mnt >/dev/null 2>&1; then
   self_ns=$(readlink /proc/self/ns/mnt)
   self_root=$(stat -L -c %d:%i / 2>/dev/null)
   for d in /proc/[0-9]*; do
@@ -410,10 +473,31 @@ fi
 base=${ROOT:-/}
 host_ns=$( [[ $LIVE -eq 1 ]] && readlink /proc/self/ns/mnt || echo image )
 STORES=(var/lib/docker var/lib/containers var/lib/containerd var/lib/lxc var/lib/lxd
-        var/snap/lxd snap var/lib/snapd var/lib/machines var/lib/flatpak)
+        var/snap/lxd var/lib/machines var/lib/flatpak)
+SNAPDIRS=(snap var/lib/snapd)   # reported only if they contain PHP
 prune=()
-for s in "${STORES[@]}"; do prune+=(-o -path "$ROOT/$s"); done
+for s in "${STORES[@]}" "${SNAPDIRS[@]}"; do prune+=(-o -path "$ROOT/$s"); done
 prune+=(-o -path "$ROOT/home/*/.local/share/containers" -o -path "$ROOT/root/.local/share/containers")
+
+# Network filesystems, Windows drives under WSL (9p, drvfs) and folders
+# shared into virtual machines are not searched. The filesystem that holds
+# the starting folder itself is always searched, so a machine whose root
+# filesystem is one of these types is still checked. Every skipped mount is
+# listed in the output.
+SKIP_FS=(nfs nfs4 cifs smb3 fuse.sshfs 9p drvfs v9fs virtiofs vboxsf fuse.vmhgfs-fuse)
+fstype_of() { # path: type of the mount that holds it (longest mount point)
+  awk -v p="$1" '{ mp = $2; gsub(/\\040/, " ", mp)
+    if ((p == mp || index(p, (mp == "/" ? "/" : mp "/")) == 1) && length(mp) >= best) { best = length(mp); t = $3 } }
+    END { print t }' /proc/self/mounts 2>/dev/null
+}
+base_fs=$(fstype_of "$base")
+for t in "${SKIP_FS[@]}"; do
+  [[ $t == "$base_fs" ]] || prune+=(-o -fstype "$t")
+done
+awk -v b="$base" -v bfs="$base_fs" -v list=" ${SKIP_FS[*]} " '{ mp = $2; gsub(/\\040/, " ", mp)
+    if (index(list, " " $3 " ") && $3 != bfs && (b == "/" || index(mp, b "/") == 1))
+      print "# not searched: " mp " (" $3 ")" }' /proc/self/mounts 2>/dev/null
+
 errlog=$(mktemp) || exit 70
 trap 'rm -f "$errlog"' EXIT
 
@@ -426,8 +510,7 @@ while IFS= read -r -d '' f; do
   rel=${f#"$ROOT"}
   add_rt "$host_ns|$rel|" "$ROOT" "$rel" "$f" "installed" "" ""
 done < <(find "$base" \( -path "$ROOT/proc" -o -path "$ROOT/sys" -o -path "$ROOT/dev" \
-           -o -path "$ROOT/run" "${prune[@]}" -o -fstype nfs -o -fstype nfs4 -o -fstype cifs \
-           -o -fstype smb3 -o -fstype fuse.sshfs \) -prune -o -type f \
+           -o -path "$ROOT/run" "${prune[@]}" \) -prune -o -type f \
            \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' \
               -o -name 'phpdbg*' -o -name 'libphp*.so*' -o -name 'mod_php*.so*' \
               -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \) -print0 2>"$errlog")
@@ -441,6 +524,13 @@ for s in "${STORES[@]}"; do
   [[ -d $base/$s ]] && emit "CHECK FAILED" "-" "/$s" "storage" "" "" \
     "Container, VM or snap storage is not inspected. Run this checker inside each container, or with --root against each extracted image."
 done
+for s in "${SNAPDIRS[@]}"; do
+  [[ -d $base/$s ]] || continue
+  if [[ -n $(find "$base/$s" -type f \( -name 'php*' -o -name 'libphp*' -o -name 'mod_php*' \) -print -quit 2>/dev/null) ]]; then
+    emit "CHECK FAILED" "-" "/$s" "storage" "" "" \
+      "Snap packages that contain PHP are not inspected. Check each snap's PHP with its publisher's security notices, or upgrade the snap."
+  fi
+done
 for s in "$ROOT"/home/*/.local/share/containers "$ROOT"/root/.local/share/containers; do
   [[ -d $s ]] && emit "CHECK FAILED" "-" "${s#"$ROOT"}" "storage" "" "" \
     "Rootless container storage is not inspected. Run this checker inside each container."
@@ -451,7 +541,7 @@ walk_errors=$(grep -v 'No such file or directory' "$errlog" | wc -l)
 if ((walk_errors > 0)); then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
     "The filesystem walk was incomplete: $walk_errors error(s), first: $(grep -v 'No such file or directory' "$errlog" | head -1 | cut -c1-120). Fix access and re-run."
-elif [[ ${#ORDER[@]} -eq 0 ]]; then
+elif [[ ${#ORDER[@]} -eq 0 && $EUID -eq 0 ]]; then
   emit PASS "-" "-" "-" "" "" "No PHP binary, module or process found on the inspected filesystems."
 fi
 

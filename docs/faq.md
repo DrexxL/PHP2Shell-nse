@@ -64,8 +64,19 @@ Yes. Export or extract it into a folder, then run the host check with
 
 ### Does it work on Windows?
 
-No. Both tools are for Linux servers. You can run the network scan from any
-computer that runs nmap, including Windows, against Linux web servers.
+- **The network scan** works on any computer that runs nmap, including
+  Windows. It can scan any web server, whatever system the server runs.
+- **The host check** runs on Linux only. On Windows, it runs inside WSL 2
+  and checks the PHP installed **in that WSL Linux system**. It cannot check
+  PHP for Windows (`php.exe`), because that is a different kind of program
+  with no Linux package record. Windows drives (`/mnt/c` and so on) are not
+  searched, and the output lists them as `# not searched`.
+- **WSL 1** is not supported for running processes. The check says so with
+  a CHECK FAILED line, and checks only files on disk.
+
+### Which Linux systems does the host check support?
+
+See [Supported systems](host-check-guide.md#supported-systems).
 
 ### Does it cover CVE-2026-115560?
 

@@ -213,7 +213,7 @@ Could the version be read?
 ```
 
 (The diagram leaves out a few special cases, such as an rpm database with no
-rpm tool. The [results reference](results-reference.md) lists every
+rpm tool, or a package whose version cannot be read. The [results reference](results-reference.md) lists every
 message.)
 
 ## 6. Why "CHECK FAILED" is a good answer

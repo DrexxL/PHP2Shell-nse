@@ -58,5 +58,9 @@ expect "newer branch is not judged"        19011 "CHECK FAILED"           "newer
 expect "transport recorded"                19001 "BANNER BELOW FIX"       "target: http://127.0.0.1:19001"
 expect "rule date recorded"                19001 "BANNER BELOW FIX"       "rule set dated 2026-11-04"
 
+# Imitate nmap before 7.94, which lacks url.ascii_hostname.
+OUT=$(nmap -Pn -sV -p 19001 --script "$HERE/tests/old_nmap_helper.nse,$NSE" 127.0.0.1 2>/dev/null)
+expect "works on nmap before 7.94"         19001 "BANNER BELOW FIX"       "Host: localhost:19001"
+
 printf '\n%d passed, %d failed\n' "$PASSED" "$FAILED"
 ((FAILED == 0))

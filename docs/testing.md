@@ -38,8 +38,9 @@ like a Linux program and contains a version string, for example
 | Package records | A backport in the changelog gives PASS; a changelog without the CVEs gives FAIL; one CVE only, a missing changelog, or "NOT fixed" wording gives CHECK FAILED. |
 | Tampering | A file whose version or checksum differs from its package is never PASS. |
 | Image safety | Links inside an image stay inside it; a link pointing outside is not followed. |
-| Other systems | Alpine packages and modules; an rpm image checked without the rpm tool. |
-| Whole run | Empty image gives PASS with exit 0; container storage is reported; any FAIL gives exit 1; `--root /` is refused; an unreadable folder is never reported as "nothing found". |
+| Other systems | Alpine packages and modules; an rpm image checked without the rpm tool; real rpm packages built with `rpmbuild` and installed into images with the database in `/var/lib/rpm` and in `/usr/lib/sysimage/rpm` (backport gives PASS, no fix gives FAIL, a mismatched file gives CHECK FAILED). The rpm package tests run only if `rpm` and `rpmbuild` are installed. |
+| Whole run | Empty image gives PASS with exit 0; container storage is reported; any FAIL gives exit 1; `--root /` is refused; an unreadable folder, or a run without root, is never reported as "nothing found". |
+| Package version | A package whose version cannot be read never gives PASS. |
 
 ## What the network scan tests do
 
@@ -60,6 +61,7 @@ computer is contacted.
 | `PHP/8.2.20-1+deb12u3` | CHECK FAILED (distribution build) |
 | `PHP/8.2` | CHECK FAILED (partial version) |
 | `PHP/8.6.0` | CHECK FAILED (newer branch) |
+| `PHP/8.2.10`, with nmap made to behave like a release before 7.94 (`tests/old_nmap_helper.nse`) | BANNER BELOW FIX: the script still runs |
 
 ## Making sure the tests can fail
 
@@ -82,9 +84,19 @@ These were tested by hand, because they need a live system:
 - A PHP process in a separate mount namespace with the host's root folder
   (as systemd sandboxing creates) was treated as part of the host.
 - HTTPS scanning by name recorded the SNI name sent.
+- With BusyBox `find` in place of GNU `find`, the check stopped with a
+  CHECK FAILED line naming the missing tool. Run with `sh` instead of bash,
+  it stopped with exit status 69.
+- A first rpm test found a real bug: rpm's built-in database location
+  differs between builds, so an image's database could be missed. The check
+  now finds the image's own database and passes its location to rpm.
 - An independent compliance audit re-ran these cases and others.
 
 ## Not yet tested
 
-- The rpm code path on a real Red Hat or SUSE system.
-- nmap versions other than 7.94.
+- The rpm code path on a real Red Hat or SUSE server, and the older Berkeley
+  DB format used by Red Hat 7 and 8.
+- Windows WSL 2 and WSL 1.
+- nmap versions other than 7.94. Older releases are imitated by
+  `tests/old_nmap_helper.nse`, and every nmap function the script uses was
+  checked against the nmap 7.80 source code.
