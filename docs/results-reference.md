@@ -66,7 +66,8 @@ the packaged one". These messages are its own:
 | CHECK FAILED | The process uses a file that has since been replaced or deleted on disk, and macOS cannot show the running copy. Restart the service and re-run. | PHP was updated or removed while it was running. | Restart the service and check again. |
 | CHECK FAILED | Running processes could not be inspected: lsof is not available. Only files on disk were checked. | The `lsof` tool is missing. | Run on a standard macOS installation. |
 | CHECK FAILED | Linux virtual-machine or container storage is not inspected. Run php2shell-hostcheck.sh inside each container. | Docker Desktop, Colima, OrbStack, Lima or Podman storage was found. | Run the Linux check inside each container. |
-| CHECK FAILED | The disk search was incomplete: `<count>` folder(s) could not be read, first: `<error>`. Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo. | macOS hid some folders. | Give the terminal app Full Disk Access and run again with `sudo`. |
+| CHECK FAILED | The disk search was limited to `<folder>` (--search); the rest of this Mac was not searched. Run without --search for a full check. | The check ran with `--search`. | Run without `--search` for a full check. |
+| CHECK FAILED | The disk search was incomplete: `<count>` folder(s) or file(s) could not be read, first: `<error>`. Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo. | macOS hid some folders. | Give the terminal app Full Disk Access and run again with `sudo`. |
 | CHECK FAILED | Required tools are missing: `<tools>`. Re-run on a standard macOS installation. | A standard tool is missing. | Run on a standard macOS installation. |
 
 ## Network scan (`php2shell-detect.nse`)

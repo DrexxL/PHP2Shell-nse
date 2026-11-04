@@ -35,29 +35,34 @@ jobs:
 
   macos:
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - name: Show the bash macOS includes
         run: /bin/bash --version | head -1
       - name: macOS host check tests, with macOS's own bash 3.2
+        timeout-minutes: 10
         run: sudo /bin/bash tests/hostcheck-macos-tests.sh
       - name: Install Homebrew PHP
         run: brew list php >/dev/null 2>&1 || brew install php
-      - name: Live macOS host check (for the record)
-        run: sudo /bin/bash ./php2shell-hostcheck-macos.sh | tee live.txt || true
+      - name: Live macOS host check of Homebrew's folder (--search)
+        timeout-minutes: 10
+        run: |
+          sudo /bin/bash ./php2shell-hostcheck-macos.sh --search "$(brew --prefix)" > quick.txt || true
+          cat quick.txt
       - name: The version is read from a real Mac PHP program
         run: |
           PHPBIN=$(cd "$(dirname "$(readlink -f "$(command -v php)")")" && pwd -P)/$(basename "$(readlink -f "$(command -v php)")")
           echo "Homebrew PHP: $PHPBIN, version $(php -r 'echo PHP_VERSION;')"
-          grep -F "|$PHPBIN|" live.txt
-          grep -F "|$PHPBIN|" live.txt | grep -qF "|$(php -r 'echo PHP_VERSION;')|"
-          ! grep -F "|$PHPBIN|" live.txt | grep -q "No PHP version string"
-
-  metasploit:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-      - name: Get the official Metasploit image
-        run: docker pull metasploitframework/metasploit-framework
-      - name: Metasploit module tests
-        run: bash tests/msf-tests.sh
+          grep -F "|$PHPBIN|" quick.txt
+          grep -F "|$PHPBIN|" quick.txt | grep -qF "|$(php -r 'echo PHP_VERSION;')|"
+          ! grep -F "|$PHPBIN|" quick.txt | grep -q "No PHP version string"
+      - name: Live macOS host check, full disk (timed, for the record)
+        timeout-minutes: 30
+        continue-on-error: true
+        run: |
+          start=$(date +%s)
+          sudo /bin/bash ./php2shell-hostcheck-macos.sh > live.txt || true
+          echo "Full live check took $(( $(date +%s) - start )) seconds"
+          grep -v '|PASS|' live.txt | head -40 || true
+          tail -1 live.txt

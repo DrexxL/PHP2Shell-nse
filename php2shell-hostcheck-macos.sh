@@ -36,6 +36,8 @@
 # HOW TO USE
 #   sudo ./php2shell-hostcheck-macos.sh              check this Mac
 #   sudo ./php2shell-hostcheck-macos.sh --root DIR   check a mounted Mac disk
+#   sudo ./php2shell-hostcheck-macos.sh --search DIR running PHP, plus DIR only
+#                                                  (never a full pass)
 #
 # Give your terminal app Full Disk Access first (System Settings > Privacy &
 # Security > Full Disk Access). Without it, macOS hides some folders even
@@ -74,16 +76,20 @@ fixed_for() { # branch -> first fixed version, or nothing
 
 ROOT=""
 LIVE=1
+SEARCH=""   # --search DIR: limit the disk walk to DIR (live mode only)
 
 usage() {
   cat <<'USAGE'
-Usage: php2shell-hostcheck-macos.sh [--root DIR]
+Usage: php2shell-hostcheck-macos.sh [--root DIR | --search DIR]
 
   (no options)  Check this Mac: running PHP processes and every PHP program
                 or module on local disks. Run with sudo, from a terminal app
                 that has Full Disk Access.
   --root DIR    Check a mounted Mac disk (for example a forensic image) at
                 DIR. No processes are inspected. DIR must not be "/".
+  --search DIR  Check running processes as usual, but search only DIR on
+                disk. The rest of the Mac is not searched, so the result
+                is never "nothing found" and the exit status is never 0.
 
 Output is pipe-delimited:
   host|result|sapi|path|seen|php_version|package|reason
@@ -97,10 +103,18 @@ while [ $# -gt 0 ]; do
       ROOT=$(cd "$2" && pwd -P) || exit 64
       [ "$ROOT" = / ] && { echo "--root /: run with no options to check this Mac" >&2; exit 64; }
       LIVE=0; shift 2 ;;
+    --search)
+      [ -d "${2:-}" ] || { echo "--search needs a directory" >&2; exit 64; }
+      SEARCH=$(cd "$2" && pwd -P) || exit 64
+      [ "$SEARCH" = / ] && { echo "--search /: run without --search for a full check" >&2; exit 64; }
+      shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Unknown option: $1" >&2; usage >&2; exit 64 ;;
   esac
 done
+if [ -n "$SEARCH" ] && [ $LIVE -eq 0 ]; then
+  echo "--search cannot be used with --root" >&2; exit 64
+fi
 
 HOST=$(hostname 2>/dev/null || echo unknown)
 [ $LIVE -eq 0 ] && HOST="image:$ROOT"
@@ -151,9 +165,8 @@ is_prerelease() {
   return 1
 }
 
-# has_marker FILE: does FILE contain PHP's version marker?
+# PHP's version marker: every PHP build carries this text.
 MARKER='X-Powered-By: PHP/'
-has_marker() { grep -aqF "$MARKER" "$1" 2>/dev/null; }
 
 # Mach-O (64-bit, 32-bit, universal) or ELF, from the first four bytes.
 is_program() {
@@ -327,6 +340,7 @@ EOF
 printf '# php2shell-hostcheck-macos %s | rules %s | %s and %s | CVE-2026-115560 not covered\n' \
   "$CHECKER_VERSION" "$RULES_DATE" "$CVE_A" "$CVE_B"
 printf '# host %s | checked %s | fields are percent-encoded (%%25 %%7C %%0D %%0A)\n' "$(esc "$HOST")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+[ -n "$SEARCH" ] && printf '# search limited to %s: files elsewhere on this Mac were not inspected\n' "$(esc "$SEARCH")"
 printf 'host|result|sapi|path|seen|php_version|package|reason\n'
 
 missing=""
@@ -360,13 +374,17 @@ if [ $LIVE -eq 1 ]; then
     # marker inside (so renamed copies are found). Apple's sealed system
     # files are not searched for the marker.
     awk -F "$US" '{print $3}' "$TMP/lsof" | sort -u > "$TMP/lsofpaths"
-    : > "$TMP/phppaths"
+    : > "$TMP/phppaths"; : > "$TMP/lsofothers"
     while IFS= read -r path; do
-      case $path in /System/*|/usr/lib/*) is_php_name "$path" || continue ;; esac
-      if is_php_name "$path" || { is_program "$path" && has_marker "$path"; }; then
-        printf '%s\n' "$path" >> "$TMP/phppaths"
-      fi
+      if is_php_name "$path"; then printf '%s\n' "$path" >> "$TMP/phppaths"; continue; fi
+      case $path in /System/*|/usr/lib/*) continue ;; esac
+      printf '%s\0' "$path" >> "$TMP/lsofothers"
     done < "$TMP/lsofpaths"
+    # Search the other loaded files for PHP's version text in batches.
+    xargs -0 grep -laF --null "$MARKER" /dev/null < "$TMP/lsofothers" 2>/dev/null |
+      while IFS= read -r -d '' path; do
+        is_program "$path" && printf '%s\n' "$path" >> "$TMP/phppaths"
+      done
     awk -F "$US" 'NR == FNR { ok[$0] = 1; next } ($3 in ok)' "$TMP/phppaths" "$TMP/lsof" |
     while IFS="$US" read -r pid ino path; do
       st=""
@@ -389,18 +407,27 @@ prune=(-path "$ROOT/System" -o -path "$ROOT/Volumes" -o -path "$ROOT/dev" -o -pa
 for s in $VMSTORES; do
   prune+=(-o -path "$ROOT/Users/*/$s" -o -path "$ROOT/private/var/root/$s")
 done
+[ -n "$SEARCH" ] && base=$SEARCH
+# Files with a PHP name are kept for checking. Every other candidate (large
+# programs and libraries) is searched for PHP's version text in batches, so
+# renamed copies are found without starting several programs per file.
 find "$base" \( "${prune[@]}" -o -fstype nfs -o -fstype smbfs -o -fstype afpfs -o -fstype webdav \) -prune -o \
      -type f \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' -o -name 'phpdbg*' \
                 -o -name 'libphp*.so' -o -name 'libphp*.dylib' -o -name 'mod_php*.so' \
                 -o \( -size +1M \( -perm -100 -o -perm -010 -o -perm -001 -o -name '*.dylib' -o -name '*.so' \) \) \) \
-     -print0 2>"$TMP/errors" \
-  | while IFS= read -r -d '' f; do
-      is_program "$f" || continue
-      # Recognised by name, or by PHP's version marker inside (renamed copies).
-      is_php_name "$f" || has_marker "$f" || continue
-      rel=${f#"$ROOT"}
-      printf '%s|%s|installed|\n' "$(esc "$rel")" "$(esc "$f")" >> "$TMP/inventory"
-    done
+     -print0 2>"$TMP/errors" > "$TMP/candidates"
+: > "$TMP/named"; : > "$TMP/others"
+while IFS= read -r -d '' f; do
+  if is_php_name "$f"; then printf '%s\0' "$f" >> "$TMP/named"; else printf '%s\0' "$f" >> "$TMP/others"; fi
+done < "$TMP/candidates"
+# grep exits 1 or xargs 123 when a batch has no match: that is not an error.
+# Files grep cannot read are counted with the folders find could not read.
+xargs -0 grep -laF --null "$MARKER" /dev/null < "$TMP/others" > "$TMP/marked" 2>>"$TMP/errors"
+cat "$TMP/named" "$TMP/marked" | while IFS= read -r -d '' f; do
+  is_program "$f" || continue
+  rel=${f#"$ROOT"}
+  printf '%s|%s|installed|\n' "$(esc "$rel")" "$(esc "$f")" >> "$TMP/inventory"
+done
 
 # One line per (path, stale): join where each one was seen.
 awk -F'|' '{ k = $1 "|" $4
@@ -421,11 +448,13 @@ for s in $VMSTORES; do
 done
 
 nerr=$(grep -cv 'No such file or directory' "$TMP/errors" 2>/dev/null)
+[ -n "$SEARCH" ] && emit "CHECK FAILED" "-" "$SEARCH" "-" "" "" \
+  "The disk search was limited to $SEARCH (--search); the rest of this Mac was not searched. Run without --search for a full check."
 nerr=${nerr:-0}
 nruntimes=$(wc -l < "$TMP/runtimes" | tr -d ' ')
 if [ "$nerr" -gt 0 ]; then
   emit "CHECK FAILED" "-" "-" "-" "" "" \
-    "The disk search was incomplete: $nerr folder(s) could not be read, first: $(grep -v 'No such file or directory' "$TMP/errors" | head -1 | cut -c1-120). Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo."
+    "The disk search was incomplete: $nerr folder(s) or file(s) could not be read, first: $(grep -v 'No such file or directory' "$TMP/errors" | head -1 | cut -c1-120). Give your terminal app Full Disk Access (System Settings > Privacy & Security > Full Disk Access), then re-run with sudo."
 elif [ "$nruntimes" -eq 0 ] && [ "$(id -u)" -eq 0 ] && [ $NCHK -eq 0 ]; then
   emit PASS "-" "-" "-" "" "" "No PHP program, module or process found on the inspected disks."
 fi

@@ -4,6 +4,18 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host checks, faster content search
+
+- The search for renamed PHP reads large files in batches with one `grep`
+  per batch, instead of starting programs for each file, in both host
+  checks. Results are unchanged; files `grep` cannot read now count as an
+  incomplete search.
+- macOS: new `--search DIR` option to check running PHP and one folder only.
+  A limited search is labelled in the output, adds a CHECK FAILED line, and
+  never exits with status 0.
+- CI: the macOS job has time limits and records how long a full check takes
+  on a real Mac.
+
 ### Host checks, after an external review
 
 - Renamed PHP is found: programs and libraries over 1 MB, and every running
@@ -33,7 +45,7 @@ All notable changes to this project. Dates are in UTC.
   MAMP, XAMPP, Laravel Herd and any other copy on the start-up disk) and
   running PHP processes (through `lsof`). Works with the bash 3.2 that macOS
   includes. `--root` checks a mounted Mac disk.
-- Self-checking tests in `tests/hostcheck-macos-tests.sh` (31 tests), passing
+- Self-checking tests in `tests/hostcheck-macos-tests.sh` (35 tests), passing
   under bash 5 and a real bash 3.2.57. Not yet run on a real Mac.
 - New guide: `docs/macos-guide.md`.
 

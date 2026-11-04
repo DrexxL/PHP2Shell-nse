@@ -52,7 +52,8 @@ You can turn the switch off again after the check.
 5. Type your Mac password when asked. The password does not show as you
    type.
 6. Wait for the summary line. A full disk search can take several minutes,
-   because large programs and libraries are also searched for renamed PHP.
+   or longer on a Mac with Xcode, because every program and library larger
+   than 1 MB is also searched for renamed PHP.
 7. Save the output for your records:
 
    ```bash
@@ -62,6 +63,23 @@ You can turn the switch off again after the check.
 Run the script from Terminal as shown. Do not double-click it in Finder.
 If `./php2shell-hostcheck-macos.sh` gives "permission denied", run it with
 `bash` instead: `sudo bash php2shell-hostcheck-macos.sh`.
+
+## Check only one folder
+
+A full check reads every large program on the disk, which can take a long
+time on a Mac with Xcode or other big apps installed. To check running PHP
+and one folder only, use `--search`:
+
+```bash
+sudo ./php2shell-hostcheck-macos.sh --search /opt/homebrew
+```
+
+The output then says `# search limited to /opt/homebrew`, and adds a CHECK
+FAILED line saying that the rest of the Mac was not searched. So a limited
+search is never reported as a full pass: its exit status is never 0. Use a
+full check, without `--search`, for your records.
+
+You cannot use `--search` together with `--root`, or with `/`.
 
 ## Check a Mac disk that is not running
 
@@ -178,8 +196,9 @@ service. macOS does not let the check read the running copy itself.
 ## Exit status
 
 The exit status is the same as the Linux check: 0 = all PASS, 1 = at least one
-FAIL, 2 = no FAIL but at least one CHECK FAILED, 64 = wrong options,
-69 = not run with bash, 70 = a temporary folder could not be created.
+FAIL, 2 = no FAIL but at least one CHECK FAILED, 64 = wrong options (including
+`--search` with `--root` or with `/`), 69 = not run with bash, 70 = a
+temporary folder could not be created.
 
 ## Limits
 

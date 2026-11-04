@@ -578,18 +578,27 @@ awk -v b="$base" -v bfs="$base_fs" -v list=" ${SKIP_FS[*]} " '{ mp = $2; gsub(/\
 errlog=$(mktemp) || exit 70
 trap 'rm -f "$errlog"' EXIT
 
+# Files with a PHP name are kept for checking. Every other candidate (large
+# programs and libraries) is searched for PHP's version text in batches, so
+# renamed copies are found without starting a program per file. Files that
+# grep cannot read are counted with the folders find could not read.
+cands=$(mktemp) && named=$(mktemp) && others=$(mktemp) && marked=$(mktemp) || exit 70
+trap 'rm -f "$errlog" "$cands" "$named" "$others" "$marked"' EXIT
+find "$base" \( -path "$ROOT/proc" -o -path "$ROOT/sys" -o -path "$ROOT/dev" \
+     -o -path "$ROOT/run" "${prune[@]}" \) -prune -o -type f \
+     \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' \
+        -o -name 'phpdbg*' -o -name 'libphp*.so*' -o -name 'mod_php*.so*' \
+        -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \
+        -o \( -size +1M \( -perm /111 -o -name '*.so*' \) \) \) -print0 2>"$errlog" > "$cands"
+while IFS= read -r -d '' f; do
+  if is_php_name "$f"; then printf '%s\0' "$f" >> "$named"; else printf '%s\0' "$f" >> "$others"; fi
+done < "$cands"
+xargs -0 -r grep -laF --null "$MARKER" < "$others" > "$marked" 2>>"$errlog"
 while IFS= read -r -d '' f; do
   is_elf "$f" || continue
-  # Recognised by name, or by PHP's version marker inside (renamed copies).
-  is_php_name "$f" || grep -aqF "$MARKER" "$f" 2>/dev/null || continue
   rel=${f#"$ROOT"}
   add_rt "$host_ns|$rel|" "$ROOT" "$rel" "$f" "installed" "" ""
-done < <(find "$base" \( -path "$ROOT/proc" -o -path "$ROOT/sys" -o -path "$ROOT/dev" \
-           -o -path "$ROOT/run" "${prune[@]}" \) -prune -o -type f \
-           \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' \
-              -o -name 'phpdbg*' -o -name 'libphp*.so*' -o -name 'mod_php*.so*' \
-              -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \
-              -o \( -size +1M \( -perm /111 -o -name '*.so*' \) \) \) -print0 2>"$errlog")
+done < <(cat "$named" "$marked")
 
 for k in "${ORDER[@]}"; do
   evaluate "${ROOTOF[$k]}" "${PATHOF[$k]}" "${READFROM[$k]}" "${SEEN[$k]}" "${STALE[$k]}" "${LABEL[$k]}"

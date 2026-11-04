@@ -62,7 +62,9 @@ processes. The suite runs on a Mac or on Linux.
 | Homebrew | Below the fix gives FAIL with `brew upgrade` advice; the fix (also with a revision such as `8.4.27_1`) gives PASS; Apple-silicon and Intel locations; an Apache module is reported as `apache2handler`; a file whose version differs from its Homebrew folder gives CHECK FAILED; a Cellar folder with no install receipt is treated as unpackaged. |
 | Other sources | MacPorts, MAMP, XAMPP (branch 8.1 gives CHECK FAILED), Laravel Herd in a folder name with spaces, unpackaged builds, a release candidate of the fix, branch 8.6. |
 | Skipped places | `/System` and `/Volumes` are not searched; Docker Desktop storage is reported and its files are not judged; a shell script named `php` is ignored. |
+| Renamed PHP | A renamed PHP binary is found by its version text, also in a folder whose name has a line break; disabling the batched search makes these tests fail. |
 | Running processes | A process whose file is unchanged is judged; a process whose file was replaced or deleted gives CHECK FAILED; non-PHP libraries are ignored; with no `lsof`, the check says processes were not inspected. |
+| `--search` | `--search` with `--root`, or with `/`, is refused; a limited search that finds nothing gives CHECK FAILED and exit 2, never "nothing found"; the live-mode tests use `--search` so they do not walk the whole disk. |
 | Whole run | Empty disk gives PASS with exit 0 (as root); exit codes 1, 2, 64 and 69; an unreadable folder gives CHECK FAILED with Full Disk Access advice, never "nothing found". |
 
 ### How old-bash support was tested without a Mac
@@ -70,7 +72,7 @@ processes. The suite runs on a Mac or on Linux.
 macOS includes bash 3.2, which lacks some features of newer bash. The suite
 was run twice on Linux: once with bash 5, and once with a real bash 3.2.57
 taken from the official `bash:3.2` Docker image, the same bash version macOS
-includes. Both runs passed all 31 tests. To repeat the 3.2 run:
+includes. Both runs passed all 35 tests. To repeat the 3.2 run:
 
 ```bash
 PHP2SHELL_TEST_SHELL=/path/to/bash-3.2 /path/to/bash-3.2 tests/hostcheck-macos-tests.sh

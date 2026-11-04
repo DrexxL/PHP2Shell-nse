@@ -171,7 +171,8 @@ printf 'p104\nftxt\ni3\nn/usr/lib/libSystem.B.dylib\n'
 printf 'p105\nftxt\ni$INO_W\nn$WORKER\n'
 FAKE
 chmod 755 "$T/fakebin/lsof"
-out=$(PATH="$T/fakebin:$PATH" "$SH" "$CHECK" 2>/dev/null)
+# --search keeps these live runs to the test folder instead of the whole disk.
+out=$(PATH="$T/fakebin:$PATH" "$SH" "$CHECK" --search "$I" 2>/dev/null)
 line=$(echo "$out" | awk -F'|' -v p="$FPM_OK" '$4 == p')
 case $line in *"|PASS|"*"pid101"*) ok "running process, file unchanged -> judged (PASS)" ;; *) bad "running process, file unchanged" "$line" ;; esac
 line=$(echo "$out" | awk -F'|' -v p="$FPM_OLD" '$4 == p && $5 ~ /pid102/')
@@ -188,9 +189,35 @@ for f in /usr/local/bin/* /usr/bin/* /bin/* /usr/sbin/* /sbin/*; do
   case ${f##*/} in lsof) continue ;; esac
   [ -e "$NOLSOF/${f##*/}" ] || ln -s "$f" "$NOLSOF/${f##*/}" 2>/dev/null
 done
-case $(PATH=$NOLSOF "$SH" "$CHECK" 2>/dev/null) in
+case $(PATH=$NOLSOF "$SH" "$CHECK" --search "$T/live" 2>/dev/null) in
   *"lsof is not available"*) ok "no lsof -> CHECK FAILED, processes not inspected" ;;
   *) bad "no lsof -> CHECK FAILED" ;;
+esac
+
+# --------------------------------------------------------------- --search
+"$SH" "$CHECK" --root "$T/brew" --search "$T/brew" >/dev/null 2>&1; rc=$?
+[ $rc -eq 64 ] && ok "--search with --root is refused (exit 64)" || bad "--search with --root is refused" "exit $rc"
+"$SH" "$CHECK" --search / >/dev/null 2>&1; rc=$?
+[ $rc -eq 64 ] && ok "--search / is refused (exit 64)" || bad "--search / is refused" "exit $rc"
+mkdir -p "$T/srch-empty"
+out=$(PATH="$NOLSOF" "$SH" "$CHECK" --search "$T/srch-empty" 2>/dev/null); rc=$?
+case $out in
+  *"# search limited to"*"limited to"*"was not searched"*)
+    case $out in *"No PHP program"*) bad "limited search never says 'nothing found'" ;;
+      *) [ $rc -eq 2 ] && ok "limited search with nothing found -> CHECK FAILED, exit 2" || bad "limited search exit" "exit $rc" ;; esac ;;
+  *) bad "limited search is labelled and gives CHECK FAILED" "$out" ;;
+esac
+# A renamed PHP in a folder whose name has a line break is still found by
+# the batched search (file names are passed between tools with NUL bytes).
+I=$T/nlsearch
+macho "$I" "/odd
+dir/runner" 8.4.27
+head -c 1100000 /dev/zero >> "$I/odd
+dir/runner"; chmod 755 "$I/odd
+dir/runner"
+case $("$SH" "$CHECK" --root "$I" 2>/dev/null) in
+  *"/odd%0Adir/runner|installed|8.4.27|"*) ok "renamed PHP in a folder with a line break is found" ;;
+  *) bad "renamed PHP in a folder with a line break is found" ;;
 esac
 
 # --------------------------------------------------------------- permissions
