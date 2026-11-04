@@ -1,0 +1,63 @@
+# Copyright 2026 Drexx Laggui
+# SPDX-License-Identifier: Apache-2.0
+#
+# Runs every test suite on each push and pull request. The macOS job also
+# runs the macOS host check on a real Mac with Homebrew PHP, and checks that
+# it reads the version from a real Mac PHP program.
+
+name: tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install nmap, rpm and PHP
+        run: sudo apt-get update && sudo apt-get install -y nmap rpm php-cli
+      - name: Linux host check tests (as root)
+        run: sudo bash tests/hostcheck-tests.sh
+      - name: Linux host check tests (without root)
+        run: bash tests/hostcheck-tests.sh
+      - name: macOS host check tests, run on Linux
+        run: sudo bash tests/hostcheck-macos-tests.sh
+      - name: Network scan tests
+        run: bash tests/nse-tests.sh
+      - name: Live host check on this runner (for the record)
+        run: sudo bash ./php2shell-hostcheck.sh || true
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the bash macOS includes
+        run: /bin/bash --version | head -1
+      - name: macOS host check tests, with macOS's own bash 3.2
+        run: sudo /bin/bash tests/hostcheck-macos-tests.sh
+      - name: Install Homebrew PHP
+        run: brew list php >/dev/null 2>&1 || brew install php
+      - name: Live macOS host check (for the record)
+        run: sudo /bin/bash ./php2shell-hostcheck-macos.sh | tee live.txt || true
+      - name: The version is read from a real Mac PHP program
+        run: |
+          PHPBIN=$(cd "$(dirname "$(readlink -f "$(command -v php)")")" && pwd -P)/$(basename "$(readlink -f "$(command -v php)")")
+          echo "Homebrew PHP: $PHPBIN, version $(php -r 'echo PHP_VERSION;')"
+          grep -F "|$PHPBIN|" live.txt
+          grep -F "|$PHPBIN|" live.txt | grep -qF "|$(php -r 'echo PHP_VERSION;')|"
+          ! grep -F "|$PHPBIN|" live.txt | grep -q "No PHP version string"
+
+  metasploit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Get the official Metasploit image
+        run: docker pull metasploitframework/metasploit-framework
+      - name: Metasploit module tests
+        run: bash tests/msf-tests.sh

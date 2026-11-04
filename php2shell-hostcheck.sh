@@ -95,9 +95,20 @@ HOST=$(cat /proc/sys/kernel/hostname 2>/dev/null || hostname)
 [[ $LIVE -eq 0 ]] && HOST="image:$ROOT"
 NFAIL=0; NCHK=0; NPASS=0
 
+# esc TEXT: percent-encode the characters that could break the record:
+# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A. Decode
+# with any URL decoder, for example python3 -c "import sys,urllib.parse;
+# [print(urllib.parse.unquote(l), end='') for l in sys.stdin]".
+esc() {
+  local t=${1//%/%25}
+  t=${t//|/%7C}; t=${t//$'\r'/%0D}; t=${t//$'\n'/%0A}
+  printf '%s' "$t"
+}
+
 emit() { # result sapi path seen version package reason
   case $1 in PASS) ((NPASS++)) ;; FAIL) ((NFAIL++)) ;; *) ((NCHK++)) ;; esac
-  printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$HOST" "$1" "$2" "$3" "$4" "${5:--}" "${6:--}" "$7"
+  printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$(esc "$HOST")" "$1" "$(esc "$2")" "$(esc "$3")" "$(esc "$4")" \
+    "$(esc "${5:--}")" "$(esc "${6:--}")" "$(esc "$7")"
 }
 
 # ---------------------------------------------------------------- helpers
@@ -128,6 +139,20 @@ binary_version() {
 # revision. "1:8.3.6-0ubuntu0.24.04.13" -> "8.3.6", "8.3.20-r0" -> "8.3.20".
 pkg_upstream() { local v=${1#*:}; v=${v%%[-+~]*}; echo "${v%%[!0-9.]*}"; }
 
+is_php_name() {
+  case ${1##*/} in php|php[0-9]*|php-fpm*|php-cgi*|phpdbg*|libphp*|mod_php*) return 0 ;; esac
+  return 1
+}
+
+# has_marker FILE KEY: does FILE contain PHP's version marker? Each KEY is
+# looked at once.
+has_marker() {
+  if [[ -z ${MARKED[$2]+x} ]]; then
+    if grep -aqF "$MARKER" "$1" 2>/dev/null; then MARKED[$2]=1; else MARKED[$2]=0; fi
+  fi
+  [[ ${MARKED[$2]} == 1 ]]
+}
+
 sapi_of() {
   case ${1##*/} in
     php-fpm*) echo fpm-fcgi ;;
@@ -135,7 +160,7 @@ sapi_of() {
     libphp*|mod_php*) echo apache2handler ;;
     phpdbg*)  echo phpdbg ;;
     php|php[0-9]*) echo cli ;;
-    *.so*)    echo apache2handler ;;   # only .so files under apache/httpd paths reach here
+    *.so*)    [[ $1 == *apache* || $1 == *httpd* ]] && echo apache2handler || echo unknown ;;
     *) echo unknown ;;
   esac
 }
@@ -176,7 +201,8 @@ dpkg_owner() {
   local root=$1 p=$2 info f pkg ver
   info=$(safe_path "$root" /var/lib/dpkg/info) || return 1
   [[ -d $info ]] || return 1
-  f=$(grep -lxF -e "$p" -e "/usr$p" -e "${p#/usr}" "$info"/*.list 2>/dev/null | head -1)
+  # Regular .list files only: a symlinked .list must not reach outside the root.
+  f=$(find "$info" -maxdepth 1 -type f -name '*.list' -exec grep -lxF -e "$p" -e "/usr$p" -e "${p#/usr}" {} + 2>/dev/null | head -1)
   [[ -n $f ]] || return 1
   pkg=${f##*/}; pkg=${pkg%.list}
   ver=$(dpkg_status_version "$root" "${pkg%%:*}")
@@ -269,12 +295,39 @@ changelog_scan() {
       CL_SRC="rpm changelog of package $pkg" ;;
     *) return ;;
   esac
-  CL_IDS=$(grep -ohE "$CVE_RE" <<<"$text" | sort -u | tr '\n' ' ')
-  CL_IDS=${CL_IDS% }
-  if [[ -z $CL_IDS ]]; then CL_STATE=NONE; return; fi
+  grep -qE "$CVE_RE" <<<"$text" || { CL_STATE=NONE; return; }
   CL_STATE=FOUND
-  CL_QUOTE=$(grep -m1 -E "$CVE_RE" <<<"$text" | sed 's/^[[:space:]]*//' | cut -c1-140)
-  grep -E "$CVE_RE" <<<"$text" | grep -qiE "not (yet )?fixed|unfixed|not affected|does not fix|revert" && CL_NEG=1
+  # Judge each changelog item (a "  * " bullet in Debian, a "- " line in
+  # rpm, with its continuation lines). A CVE counts as fixed only if an
+  # item that names it also states a fix and contains no wording that
+  # denies or postpones one. Any other mention makes the result unclear.
+  local res
+  res=$(awk -v A="$CVE_A" -v B="$CVE_B" '
+    function flush(   low, fix, neg, i, c) {
+      if (item == "") return
+      low = tolower(item)
+      # Whole words only: a word must start after a space or punctuation,
+      # so names such as "oom_pending_at_shutdown.phpt" do not count.
+      fix = (low ~ /(^|[ \t\n(:;,"])(security update|fix|fixes|fixed|patch|patched|backport|backported|resolves?)([^a-z_]|$)/)
+      neg = (low ~ /(^|[ \t\n(:;,"])(not (yet )?fixed|unfixed|not affected|does not fix|doesn.t fix|remains? vulnerable|still vulnerable|investigat[a-z]*|pending|revert[a-z]*|to be fixed|todo|no fix)([^a-z_]|$)/)
+      for (i = 1; i <= 2; i++) {
+        c = (i == 1) ? A : B
+        if (index(item, c) == 0) continue
+        if (fix && !neg) { ok[c] = 1; if (good == "") good = first }
+        else { unclear = 1; if (bad == "") bad = first " ... " c }
+      }
+      item = ""
+    }
+    /^[^ \t*-]/ || /^ -- / || /^\* / { flush(); next }
+    /^  \* / || /^- /                { flush(); item = $0; first = $0; next }
+    { if (item == "") { item = $0; first = $0 } else item = item "\n" $0 }
+    END {
+      flush()
+      ids = (ok[A] ? A : "") ((ok[A] && ok[B]) ? " " : "") (ok[B] ? B : "")
+      print ids "\037" unclear "\037" (unclear ? bad : good)
+    }' <<<"$text")
+  IFS=$'\037' read -r CL_IDS CL_NEG CL_QUOTE <<<"$res"
+  CL_QUOTE=$(sed 's/^[[:space:]*-]*//' <<<"$CL_QUOTE" | cut -c1-140)
 }
 
 # ---------------------------------------------------------------- evaluate
@@ -357,12 +410,12 @@ evaluate() {
 
   if [[ $CL_STATE == FOUND && -n $CL_NEG ]]; then
     emit "CHECK FAILED" "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "The changelog ($CL_SRC) mentions the CVEs in wording that may not mean a fix: \"$CL_QUOTE\". Read the entry."
+      "The changelog ($CL_SRC) mentions the CVEs without clearly stating a fix, or with wording that may deny one: \"$CL_QUOTE\". Read the entry."
     return
   fi
   if [[ $CL_STATE == FOUND && $CL_IDS == *"$CVE_A"* && $CL_IDS == *"$CVE_B"* ]]; then
     emit PASS "$sapi" "$show" "$seen" "$full" "$pkgdesc" \
-      "The changelog ($CL_SRC) records both $CVE_A and $CVE_B, e.g. \"$CL_QUOTE\"."
+      "The changelog ($CL_SRC) records a fix for both $CVE_A and $CVE_B, e.g. \"$CL_QUOTE\"."
     return
   fi
 
@@ -406,12 +459,12 @@ evaluate() {
 
 # ---------------------------------------------------------------- discovery
 
-declare -A SEEN ROOTOF READFROM STALE LABEL
+declare -A SEEN ROOTOF READFROM STALE LABEL PATHOF MARKED
 declare -a ORDER
 
 add_rt() { # key root path readfrom seen stale label
   if [[ -z ${SEEN[$1]+x} ]]; then
-    ORDER+=("$1"); SEEN[$1]=$5; ROOTOF[$1]=$2; READFROM[$1]=$4; STALE[$1]=$6; LABEL[$1]=$7
+    ORDER+=("$1"); SEEN[$1]=$5; ROOTOF[$1]=$2; PATHOF[$1]=$3; READFROM[$1]=$4; STALE[$1]=$6; LABEL[$1]=$7
   else
     SEEN[$1]+=",$5"
   fi
@@ -419,7 +472,7 @@ add_rt() { # key root path readfrom seen stale label
 
 printf '# php2shell-hostcheck %s | rules %s | %s and %s | CVE-2026-115560 not covered\n' \
   "$CHECKER_VERSION" "$RULES_DATE" "$CVE_A" "$CVE_B"
-printf '# host %s | checked %s\n' "$HOST" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '# host %s | checked %s | fields are percent-encoded (%%25 %%7C %%0D %%0A)\n' "$(esc "$HOST")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'host|result|sapi|path|seen|php_version|package|reason\n'
 
 # The checker relies on GNU find and stat and a few other standard tools.
@@ -474,16 +527,18 @@ if [[ $LIVE -eq 1 ]] && readlink /proc/self/ns/mnt >/dev/null 2>&1; then
     exe=$(readlink "$d/exe" 2>/dev/null)
     if [[ -n $exe ]]; then
       st=""; [[ $exe == *" (deleted)" ]] && { exe=${exe% (deleted)}; st=1; }
-      case ${exe##*/} in
-        php|php[0-9]*|php-fpm*|php-cgi*|phpdbg*)
-          add_rt "$ns|$exe|$st" "$r" "$exe" "/proc/$pid/exe" "pid$pid" "$st" "$lab" ;;
-      esac
+      # A PHP program is recognised by name, or by PHP's version marker
+      # inside it, so a renamed PHP binary is found too.
+      if is_php_name "$exe" || has_marker "/proc/$pid/exe" "$ns|$exe|$st"; then
+        add_rt "$ns|$exe|$st" "$r" "$exe" "/proc/$pid/exe" "pid$pid" "$st" "$lab"
+      fi
     fi
     # PHP modules loaded into another process, such as mod_php in Apache.
     while read -r range _ _ _ _ lib; do
-      [[ $lib =~ /(libphp|mod_php)[^/]*\.so ]] || continue
+      [[ $lib == /*.so* ]] || continue
       st=""; [[ $lib == *" (deleted)" ]] && { lib=${lib% (deleted)}; st=1; }
       from="$r$lib"; [[ -n $st ]] && from="/proc/$pid/map_files/$range"
+      [[ $lib =~ /(libphp|mod_php)[^/]*\.so ]] || has_marker "$from" "$ns|$lib|$st" || continue
       add_rt "$ns|$lib|$st" "$r" "$lib" "$from" "pid$pid" "$st" "$lab"
     done 2>/dev/null < "$d/maps"
   done
@@ -525,21 +580,19 @@ trap 'rm -f "$errlog"' EXIT
 
 while IFS= read -r -d '' f; do
   is_elf "$f" || continue
-  case ${f##*/} in
-    php|php[0-9]*|php-fpm*|php-cgi*|phpdbg*|libphp*|mod_php*) ;;
-    *) grep -aqF "$MARKER" "$f" 2>/dev/null || continue ;;  # other web-server modules
-  esac
+  # Recognised by name, or by PHP's version marker inside (renamed copies).
+  is_php_name "$f" || grep -aqF "$MARKER" "$f" 2>/dev/null || continue
   rel=${f#"$ROOT"}
   add_rt "$host_ns|$rel|" "$ROOT" "$rel" "$f" "installed" "" ""
 done < <(find "$base" \( -path "$ROOT/proc" -o -path "$ROOT/sys" -o -path "$ROOT/dev" \
            -o -path "$ROOT/run" "${prune[@]}" \) -prune -o -type f \
            \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' \
               -o -name 'phpdbg*' -o -name 'libphp*.so*' -o -name 'mod_php*.so*' \
-              -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \) -print0 2>"$errlog")
+              -o \( -name '*.so' \( -path '*apache*' -o -path '*httpd*' \) \) \
+              -o \( -size +1M \( -perm /111 -o -name '*.so*' \) \) \) -print0 2>"$errlog")
 
 for k in "${ORDER[@]}"; do
-  IFS='|' read -r _ p _ <<<"$k"
-  evaluate "${ROOTOF[$k]}" "$p" "${READFROM[$k]}" "${SEEN[$k]}" "${STALE[$k]}" "${LABEL[$k]}"
+  evaluate "${ROOTOF[$k]}" "${PATHOF[$k]}" "${READFROM[$k]}" "${SEEN[$k]}" "${STALE[$k]}" "${LABEL[$k]}"
 done
 
 for s in "${STORES[@]}"; do

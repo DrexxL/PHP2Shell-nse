@@ -51,7 +51,8 @@ You can turn the switch off again after the check.
 
 5. Type your Mac password when asked. The password does not show as you
    type.
-6. Wait for the summary line. A full disk search can take several minutes.
+6. Wait for the summary line. A full disk search can take several minutes,
+   because large programs and libraries are also searched for renamed PHP.
 7. Save the output for your records:
 
    ```bash
@@ -127,7 +128,10 @@ PHP came from, so it can give the right advice:
 | Anything else | Anywhere on the disk | Rebuild or upgrade it (reported as an unpackaged build) |
 
 The locations in this table are the usual ones. A copy of PHP in any other
-place is still found. It is then reported as an unpackaged build.
+place is still found, and so is a renamed copy, because every PHP build
+carries its version text inside. It is then reported as an unpackaged build.
+The output is percent-encoded in the same way as the Linux check's (see the
+[host check guide](host-check-guide.md#read-the-output)).
 
 For Homebrew, the check also makes sure the file belongs to its package: the
 version inside the file must match the version of its Homebrew folder, and

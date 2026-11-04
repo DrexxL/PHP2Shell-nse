@@ -9,7 +9,7 @@ clean record.
 
 | Tool and result | Evidence it rests on | What it proves | What it does not prove |
 |---|---|---|---|
-| Host check, PASS (changelog) | The installed package's changelog names both CVEs; the file's version, and on Debian/Ubuntu its checksum where the package recorded one, match the package record. | The package maker states the fix is included in this package, and the file is that package's file. | That the fix works, or that no other copy of PHP exists outside the searched filesystems. |
+| Host check, PASS (changelog) | An item in the installed package's changelog names each CVE and states a fix ("security update", "fix", "patch", "backport" or "resolves", as whole words), with no wording that denies or postpones one; the file's version, and on Debian/Ubuntu its checksum where the package recorded one, match the package record. | The package maker states the fix is included in this package, and the file is that package's file. | That the fix works, or that no other copy of PHP exists outside the searched filesystems. |
 | Host check, PASS (version) | The version stored inside the file is at or after the fixed release. | The file reports a fixed upstream version. | That the version string was not altered by someone who built the file. |
 | Host check, FAIL | The version is in the affected range, and no changelog entry or package record shows a fix. | No remediation record exists for this file. | That an attacker can exploit it. Exploitability also depends on configuration. |
 | macOS host check, PASS | The version stored inside the file is at or after the fixed release; for Homebrew, the file's version matches its Homebrew folder, which has an install receipt. | The file reports a fixed upstream version. | That the version string was not altered by whoever built the file. |
@@ -54,6 +54,13 @@ those branches as CHECK FAILED and never as PASS or FAIL.
 
 ## Keeping a clean record
 
+### The record cannot be forged by file names
+
+Both host checks percent-encode every output field (`%25`, `%7C`, `%0D`,
+`%0A`), so a crafted file name inside an image cannot add columns or fake
+result lines. The header line says so. Decode with any URL decoder (see the
+[host check guide](host-check-guide.md#read-the-output)).
+
 ### Record what you ran
 
 Before a check, record the exact tool files used:
@@ -87,10 +94,12 @@ For a disk image:
 
 Two behaviours protect the image's integrity:
 
-- **Links stay inside the image.** A link such as
+- **Links stay inside the image.** Package records are read only from
+  regular files: a symlinked dpkg `.list` file is ignored.
+- **Links in documentation folders stay inside the image too.** A link such as
   `/usr/share/doc/x -> /usr/share/doc/y` is resolved inside
-  `/mnt/evidence`. The checking computer's own files can never be mistaken
-  for the image's.
+  `/mnt/evidence`, so the checking computer's own files are not read in
+  place of the image's.
 - **Incomplete searches are reported.** If any folder cannot be read, the
   result is CHECK FAILED. The tool never reports "no PHP found" after a
   partial search.

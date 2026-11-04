@@ -112,6 +112,25 @@ case $("$SH" "$CHECK" --root "$I" 2>/dev/null) in
   *) ok "files inside Docker Desktop storage are not judged" ;;
 esac
 
+# --------------------------------------------------------------- adversarial
+I=$T/renamed
+macho "$I" /Users/alice/bin/worker 8.2.10
+head -c 1100000 /dev/zero >> "$I/Users/alice/bin/worker"; chmod 755 "$I/Users/alice/bin/worker"
+expect "renamed PHP binary is found by its marker -> FAIL" "$I" /Users/alice/bin/worker FAIL "|unknown|"
+I=$T/hostile
+macho "$I" '/opt/x|PASS|y/php' 8.2.10
+macho "$I" "/opt/new
+PASS line/php" 8.2.10
+out=$("$SH" "$CHECK" --root "$I" 2>/dev/null)
+rows=$(echo "$out" | grep -c '|FAIL|cli|/opt/')
+badrows=$(echo "$out" | grep '^image:' | awk -F'|' 'NF != 8' | wc -l | tr -d ' ')
+case $out in
+  *"/opt/x%7CPASS%7Cy/php"*"/opt/new%0APASS line/php"*|*"/opt/new%0APASS line/php"*"/opt/x%7CPASS%7Cy/php"*)
+    if [ "$rows" -eq 2 ] && [ "$badrows" -eq 0 ]; then ok "hostile file names are percent-encoded (2 rows, 8 fields each)"
+    else bad "hostile file names are percent-encoded" "rows $rows, bad $badrows"; fi ;;
+  *) bad "hostile file names are percent-encoded" "$out" ;;
+esac
+
 # --------------------------------------------------------------- whole run
 I=$T/empty; mkdir -p "$I/usr/local/bin"
 if [ "$(id -u)" -eq 0 ]; then
@@ -139,6 +158,9 @@ macho "$I" /opt/homebrew/Cellar/php/8.4.20/sbin/php-fpm 8.4.20
 FPM_OK="$I/opt/homebrew/Cellar/php/8.4.27/sbin/php-fpm"
 FPM_OLD="$I/opt/homebrew/Cellar/php/8.4.20/sbin/php-fpm"
 INO_OK=$(ls -di "$FPM_OK" | awk '{print $1}')
+macho "$I" /Users/alice/srv/queue-worker 8.4.20
+WORKER="$I/Users/alice/srv/queue-worker"
+INO_W=$(ls -di "$WORKER" | awk '{print $1}')
 mkdir -p "$T/fakebin"
 cat > "$T/fakebin/lsof" <<FAKE
 #!/bin/sh
@@ -146,6 +168,7 @@ printf 'p101\nftxt\ni$INO_OK\nn$FPM_OK\n'
 printf 'p102\nftxt\ni1\nn$FPM_OLD\n'
 printf 'p103\nftxt\ni2\nn$I/opt/homebrew/Cellar/php/8.4.19/sbin/php-fpm\n'
 printf 'p104\nftxt\ni3\nn/usr/lib/libSystem.B.dylib\n'
+printf 'p105\nftxt\ni$INO_W\nn$WORKER\n'
 FAKE
 chmod 755 "$T/fakebin/lsof"
 out=$(PATH="$T/fakebin:$PATH" "$SH" "$CHECK" 2>/dev/null)
@@ -156,6 +179,8 @@ case $line in *"CHECK FAILED"*"replaced or deleted"*) ok "running process, file 
 line=$(echo "$out" | grep 'php/8.4.19/sbin/php-fpm')
 case $line in *"CHECK FAILED"*"replaced or deleted"*) ok "running process, file deleted -> CHECK FAILED" ;; *) bad "running process, file deleted" "$line" ;; esac
 case $out in *"libSystem"*) bad "non-PHP libraries are ignored" ;; *) ok "non-PHP libraries are ignored" ;; esac
+line=$(echo "$out" | awk -F'|' -v p="$WORKER" '$4 == p && $5 ~ /pid105/')
+case $line in *"|FAIL|unknown|"*) ok "renamed running PHP is found by its marker" ;; *) bad "renamed running PHP is found" "$line" ;; esac
 
 printf '#!/bin/sh\nexit 127\n' > "$T/fakebin/lsof"; rm -f "$T/fakebin/lsof"
 NOLSOF=$T/nolsof; mkdir -p "$NOLSOF"

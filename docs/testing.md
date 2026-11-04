@@ -43,6 +43,8 @@ like a Linux program and contains a version string, for example
 | Version rules | Below the fix is FAIL; the fix and newer is PASS; RC and dev builds of the fix count as older; branches 8.1, 5.6 and 8.6 are CHECK FAILED. |
 | Package records | A backport in the changelog gives PASS; a changelog without the CVEs gives FAIL; one CVE only, a missing changelog, or "NOT fixed" wording gives CHECK FAILED. |
 | Tampering | A file whose version or checksum differs from its package is never PASS. |
+| Changelog wording | "Investigate exposure to ..." and "Security fix pending: systems remain vulnerable to ..." give CHECK FAILED; Ubuntu's real layout (fix stated at the top, CVE IDs 300 lines later, "pending" inside a file name) gives PASS. |
+| Adversarial | A renamed PHP binary (`/opt/app/worker`) is found; a symlinked dpkg `.list` pointing outside the image is ignored; file names containing `\|` and a line break are percent-encoded, giving exactly 2 rows of 8 fields. |
 | Image safety | Links inside an image stay inside it; a link pointing outside is not followed. |
 | Other systems | Alpine packages and modules; an rpm image checked without the rpm tool; real rpm packages built with `rpmbuild` and installed into images with the database in `/var/lib/rpm` and in `/usr/lib/sysimage/rpm` (backport gives PASS, no fix gives FAIL, a mismatched file gives CHECK FAILED). The rpm package tests run only if `rpm` and `rpmbuild` are installed. |
 | Whole run | Empty image gives PASS with exit 0; container storage is reported; any FAIL gives exit 1; `--root /` is refused; an unreadable folder, or a run without root, is never reported as "nothing found". |
@@ -68,7 +70,7 @@ processes. The suite runs on a Mac or on Linux.
 macOS includes bash 3.2, which lacks some features of newer bash. The suite
 was run twice on Linux: once with bash 5, and once with a real bash 3.2.57
 taken from the official `bash:3.2` Docker image, the same bash version macOS
-includes. Both runs passed all 28 tests. To repeat the 3.2 run:
+includes. Both runs passed all 31 tests. To repeat the 3.2 run:
 
 ```bash
 PHP2SHELL_TEST_SHELL=/path/to/bash-3.2 /path/to/bash-3.2 tests/hostcheck-macos-tests.sh

@@ -69,8 +69,10 @@ them. It reads the version number stored inside each file, finds out which
 software package installed the file, and searches that package's history of
 changes (its "changelog") for the two CVE numbers.
 
-- **PASS** means there is proof of the fix. Either the changelog lists both
-  CVE numbers, or the version is at or after the fixed one.
+- **PASS** means there is proof of the fix. Either the changelog has an
+  entry that states a fix for both CVE numbers, or the version is at or after
+  the fixed one. A changelog that only *mentions* the CVE numbers is not
+  enough.
 - **FAIL** means the version is old enough to have the bugs, and nothing
   shows that a fix was added.
 - **CHECK FAILED** means the tool could not find proof either way. It never
@@ -110,7 +112,7 @@ sudo ./php2shell-hostcheck.sh --root /mnt/disk
 **Example output line:**
 
 ```
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records both CVE-2026-109618 and CVE-2026-109619, e.g. "- debian/patches/CVE-2026-109618_109619.patch: Avoid state corruption via".
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records a fix for both CVE-2026-109618 and CVE-2026-109619, e.g. "SECURITY UPDATE: Remote RCE via state corruption issue".
 ```
 
 The run can take a minute, because the tool searches the whole disk. That
@@ -191,8 +193,9 @@ Read these before you rely on a result.
   WSL and folders shared into virtual machines are skipped. Each skipped
   mount is listed in the output as `# not searched: ...`.
 - **Images stay sealed.** With `--root`, links inside the image are followed
-  only inside the image, so the checking computer's own files can never be
-  mistaken for the image's.
+  only inside the image, and package records are read only from regular
+  files, so the checking computer's own files are not read in place of the
+  image's.
 - **A changelog is a record, not a test.** PASS from a changelog means the
   package maker says the fix is included. The tools do not test the fix.
 - **Only nmap 7.94 was used for testing.** Every nmap function the script

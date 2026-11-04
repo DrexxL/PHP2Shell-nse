@@ -135,6 +135,14 @@ check finds them in two ways:
   This also finds `php-cgi`, which runs only for a moment when a web page
   asks for it.
 
+It recognises PHP in two ways: by its usual file names (`php`, `php8.3`,
+`php-fpm`, `libphp.so` and so on), and by the version text that every PHP
+build carries inside it (see step 2). **Example:** a PHP binary renamed to
+`/opt/app/worker` has no PHP-like name, but it still carries
+`X-Powered-By: PHP/8.2.10`, so it is found. To keep the search fast, the
+inside of a file is checked only for programs and libraries larger than 1 MB;
+every PHP build is much larger than that.
+
 ### Step 2: Read the version without running anything
 
 Every PHP program contains its own version number, stored as the text
@@ -171,15 +179,33 @@ package record.
 
 Debian, Ubuntu and Red Hat packages include a **changelog**: a list of
 changes in each version. When a distribution backports a fix, it names the
-CVE in the changelog. The host check searches the changelog for both CVE
-numbers.
+CVE in the changelog. The host check reads the changelog **item by item**:
+a "  * " bullet with its sub-lines in Debian and Ubuntu, or a "- " line in
+Red Hat. A CVE counts as fixed only if an item names it **and** states a fix,
+with words such as "security update", "fix", "patch", "backport" or
+"resolves".
+
+**Example:** Ubuntu's item starts with `SECURITY UPDATE: Remote RCE via
+state corruption issue` and lists `CVE-2026-109618` and `CVE-2026-109619`
+at its end. Both CVEs count as fixed.
 
 It also guards against wrong readings:
 
-- If only one CVE is listed, the result is CHECK FAILED.
-- If the entry uses words such as "not fixed", the result is CHECK FAILED,
-  and the report quotes the entry so a person can read it.
-- Every PASS names the changelog file it used and quotes the entry.
+- An item that names a CVE but states no fix gives CHECK FAILED.
+  **Example:** "Investigate exposure to CVE-2026-109618 and CVE-2026-109619."
+- An item with words that deny or postpone a fix gives CHECK FAILED, even if
+  it also says "fix". **Example:** "Security fix pending: systems remain
+  vulnerable to ...". The words checked are: not fixed, not yet fixed,
+  unfixed, not affected, does not fix, remains vulnerable, still vulnerable,
+  investigate, pending, revert, to be fixed, todo, no fix.
+- Words count only as whole words. A file name such as
+  `oom_pending_at_shutdown.phpt` does not count as "pending".
+- If only one CVE has a stated fix, the result is CHECK FAILED.
+- Every PASS names the changelog file it used and quotes the item.
+
+This is a careful reading of plain text, not an understanding of it. An
+unusual changelog can still mislead it, so every PASS quotes its evidence
+for a person to read.
 
 ### Step 5: Decide
 

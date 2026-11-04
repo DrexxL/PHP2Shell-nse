@@ -4,6 +4,20 @@ All notable changes to this project. Dates are in UTC.
 
 ## 2026-11-04
 
+### Host checks, after an external review
+
+- Renamed PHP is found: programs and libraries over 1 MB, and every running
+  program and loaded library, are searched for PHP's version text, whatever
+  their name. (False PASS removed.)
+- Changelog evidence needs an item that names the CVE **and** states a fix,
+  with no wording that denies or postpones one; whole words only. A bare
+  mention gives CHECK FAILED. (False PASS removed.)
+- Every output field is percent-encoded, so file names cannot add columns or
+  fake result lines.
+- Only regular dpkg `.list` files are read; a symlinked one is ignored.
+- Tests: adversarial cases added; the suite now passes with and without root
+  (46 as root, 44 without, which skips 2 root-only tests).
+
 ### Metasploit module (new)
 
 - `metasploit/php2shell_banner.rb`: Metasploit auxiliary scanner that ports
@@ -19,7 +33,7 @@ All notable changes to this project. Dates are in UTC.
   MAMP, XAMPP, Laravel Herd and any other copy on the start-up disk) and
   running PHP processes (through `lsof`). Works with the bash 3.2 that macOS
   includes. `--root` checks a mounted Mac disk.
-- Self-checking tests in `tests/hostcheck-macos-tests.sh` (28 tests), passing
+- Self-checking tests in `tests/hostcheck-macos-tests.sh` (31 tests), passing
   under bash 5 and a real bash 3.2.57. Not yet run on a real Mac.
 - New guide: `docs/macos-guide.md`.
 

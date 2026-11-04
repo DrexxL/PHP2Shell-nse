@@ -34,7 +34,7 @@ updates anyway.
 
 Probably yes. Distributions often copy a fix into an older version
 (a backport). The PASS line names the changelog file and quotes the entry
-that lists both CVEs, so you can read it yourself.
+that states a fix for both CVEs, so you can read it yourself.
 
 ### I updated PHP but the host check still reports a problem.
 

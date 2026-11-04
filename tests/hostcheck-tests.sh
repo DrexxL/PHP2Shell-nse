@@ -71,33 +71,78 @@ else FAILED=$((FAILED + 1)); echo "FAIL  shell script named like PHP is ignored"
 I=$T/pkg
 fake "$I" /usr/bin/php8.3 8.3.6
 dpkg_pkg "$I" php8.3-cli 8.3.6-0ubuntu0.24.04.13 /usr/bin/php8.3 $'php8.3 (8.3.6-0ubuntu0.24.04.13)\n  * SECURITY UPDATE: CVE-2026-109618\n  * SECURITY UPDATE: CVE-2026-109619'
-expect "backport in changelog -> PASS"        "$I" /usr/bin/php8.3 PASS "records both"
+expect "backport in changelog -> PASS"        "$I" /usr/bin/php8.3 PASS "records a fix for both"
 fake "$I" /usr/sbin/php-fpm8.4 8.4.20
 dpkg_pkg "$I" php8.4-fpm 8.4.20-1 /usr/sbin/php-fpm8.4 'php8.4 (8.4.20-1) * CVE-2026-00001'
 expect "changelog without CVEs -> FAIL"       "$I" /usr/sbin/php-fpm8.4 FAIL "no record of either CVE"
 fake "$I" /usr/bin/php-cgi8.3 8.3.6
-dpkg_pkg "$I" php8.3-cgi 8.3.6-0ubuntu1 /usr/bin/php-cgi8.3 '  * CVE-2026-109618 only'
+dpkg_pkg "$I" php8.3-cgi 8.3.6-0ubuntu1 /usr/bin/php-cgi8.3 '  * SECURITY UPDATE: fix CVE-2026-109618'
 expect "only one CVE in changelog -> CHECK FAILED" "$I" /usr/bin/php-cgi8.3 "CHECK FAILED" "records only"
 fake "$I" /usr/lib/apache2/modules/libphp8.2.so 8.2.20
 dpkg_pkg "$I" libapache2-mod-php8.2:amd64 8.2.20-1 /usr/lib/apache2/modules/libphp8.2.so
 expect "changelog missing -> CHECK FAILED"    "$I" /usr/lib/apache2/modules/libphp8.2.so "CHECK FAILED" "could not be read"
 fake "$I" /usr/bin/php8.2 8.2.20
 dpkg_pkg "$I" php8.2-cli 8.2.20-1 /usr/bin/php8.2 '  * CVE-2026-109618 and CVE-2026-109619 are NOT fixed in this upload'
-expect "changelog says not fixed -> CHECK FAILED" "$I" /usr/bin/php8.2 "CHECK FAILED" "may not mean a fix"
+expect "changelog says not fixed -> CHECK FAILED" "$I" /usr/bin/php8.2 "CHECK FAILED" "may deny one"
+
+# A changelog that names the CVEs without stating a fix must never PASS.
+I=$T/wording
+fake "$I" /usr/bin/php8.3 8.3.6
+dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * Investigate exposure to CVE-2026-109618 and CVE-2026-109619.'
+expect "changelog 'investigate exposure' -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "without clearly stating a fix"
+fake "$I" /usr/bin/php8.4 8.4.20
+dpkg_pkg "$I" php8.4-cli 8.4.20-1 /usr/bin/php8.4 '  * Security fix pending: systems remain vulnerable to CVE-2026-109618 and CVE-2026-109619.'
+expect "changelog 'remain vulnerable' -> CHECK FAILED"    "$I" /usr/bin/php8.4 "CHECK FAILED" "may deny one"
+# Ubuntu's real layout: the fix is stated at the top of the item, the CVE IDs
+# come hundreds of lines later, and a file name contains the word "pending".
+fake "$I" /usr/bin/php8.2 8.2.20
+{ printf 'php8.2 (8.2.20-1ubuntu1) noble-security; urgency=medium\n\n  * SECURITY UPDATE: Remote RCE via state corruption issue\n'
+  printf '    - debian/patches/CVE-2026-109618_109619.patch: Avoid state corruption via\n'
+  for n in $(seq 1 300); do printf '      Zend/tests/oom_pending_at_shutdown_%s.phpt,\n' "$n"; done
+  printf '    - CVE-2026-109618\n    - CVE-2026-109619\n\n -- Maintainer <m@example.org>  Mon, 26 Oct 2026 10:00:00 +0000\n'
+} > "$T/ubuntu-changelog.txt"
+dpkg_pkg "$I" php8.2-cli 8.2.20-1ubuntu1 /usr/bin/php8.2 "$(cat "$T/ubuntu-changelog.txt")"
+expect "Ubuntu-style item, IDs far below the fix -> PASS" "$I" /usr/bin/php8.2 PASS "SECURITY UPDATE: Remote RCE"
+
+# A renamed PHP binary is found by the marker inside it.
+I=$T/renamed
+fake "$I" /opt/app/worker 8.2.10
+head -c 1100000 /dev/zero >> "$I/opt/app/worker"; chmod 755 "$I/opt/app/worker"
+expect "renamed PHP binary is found -> FAIL" "$I" /opt/app/worker FAIL "Unpackaged build"
+
+# A symlinked .list file must not reach the checking computer's files.
+I=$T/listlink
+fake "$I" /usr/bin/php8.3 8.3.6
+mkdir -p "$I/var/lib/dpkg/info"; : > "$I/var/lib/dpkg/status"
+echo /usr/bin/php8.3 > "$T/outside.list"
+ln -s "$T/outside.list" "$I/var/lib/dpkg/info/php8.3-cli.list"
+expect "symlinked .list is ignored -> unpackaged" "$I" /usr/bin/php8.3 FAIL "Unpackaged build"
+
+# Hostile file names cannot add columns or rows to the record.
+I=$T/hostile
+fake "$I" '/opt/x|PASS|y/php' 8.2.10
+fake "$I" $'/opt/new\nPASS line/php' 8.2.10
+out=$(bash "$CHECK" --root "$I" 2>/dev/null)
+rows=$(grep -c '|FAIL|cli|/opt/' <<<"$out"); bad=$(grep '^image:' <<<"$out" | awk -F'|' 'NF != 8' | wc -l)
+if [[ $rows -eq 2 && $bad -eq 0 && $out == *"/opt/x%7CPASS%7Cy/php"* && $out == *"/opt/new%0APASS line/php"* ]]; then
+  PASSED=$((PASSED + 1)); echo "ok    hostile file names are percent-encoded (2 rows, 8 fields each)"
+else
+  FAILED=$((FAILED + 1)); echo "FAIL  hostile file names are percent-encoded (rows $rows, bad $bad)"; echo "$out" | sed 's/^/      /'
+fi
 
 # A file that does not match its package must never PASS.
 I=$T/mismatch
 fake "$I" /usr/bin/php8.3 8.3.6
-dpkg_pkg "$I" php8.3-cli 8.3.36-1 /usr/bin/php8.3 '  * CVE-2026-109618 CVE-2026-109619'
+dpkg_pkg "$I" php8.3-cli 8.3.36-1 /usr/bin/php8.3 '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619'
 expect "file version differs from package -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "not the packaged one"
 I=$T/checksum
 fake "$I" /usr/bin/php8.3 8.3.6
-dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * CVE-2026-109618 CVE-2026-109619'
+dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619'
 echo "00000000000000000000000000000000  usr/bin/php8.3" > "$I/var/lib/dpkg/info/php8.3-cli.md5sums"
 expect "file checksum differs from package -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "checksum differs"
 I=$T/checksum-ok
 fake "$I" /usr/bin/php8.3 8.3.6
-dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * CVE-2026-109618 CVE-2026-109619'
+dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3 '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619'
 echo "$(md5sum < "$I/usr/bin/php8.3" | cut -d' ' -f1)  usr/bin/php8.3" > "$I/var/lib/dpkg/info/php8.3-cli.md5sums"
 expect "file checksum matches package -> PASS" "$I" /usr/bin/php8.3 PASS
 
@@ -108,7 +153,7 @@ dpkg_pkg "$I" php8.3-cli 8.3.6-1 /usr/bin/php8.3
 mkdir -p "$I/usr/share/doc"
 ln -s /usr/share/doc/php8.3-common "$I/usr/share/doc/php8.3-cli"
 mkdir -p "$I/usr/share/doc/php8.3-common"
-printf '  * CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-common/changelog.Debian.gz"
+printf '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-common/changelog.Debian.gz"
 printf 'Package: php8.3-common\nVersion: 8.3.6-1\n\n' >> "$I/var/lib/dpkg/status"
 expect "absolute doc link resolved inside image -> PASS" "$I" /usr/bin/php8.3 PASS "/usr/share/doc/php8.3-common/"
 I=$T/symlink-out
@@ -124,7 +169,7 @@ fake "$I" /usr/bin/php8.3 8.3.6
 mkdir -p "$I/var/lib/dpkg/info" "$I/usr/share/doc/php8.3-cli"
 echo /usr/bin/php8.3 > "$I/var/lib/dpkg/info/php8.3-cli.list"
 : > "$I/var/lib/dpkg/status"
-printf '  * CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-cli/changelog.Debian.gz"
+printf '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-cli/changelog.Debian.gz"
 expect "package version unreadable -> CHECK FAILED" "$I" /usr/bin/php8.3 "CHECK FAILED" "version could not be read"
 
 # Fallback to php<branch>-common only at the same package version.
@@ -132,7 +177,7 @@ I=$T/common
 fake "$I" /usr/bin/php8.3 8.3.6
 dpkg_pkg "$I" php8.3-cli 8.3.6-2 /usr/bin/php8.3
 mkdir -p "$I/usr/share/doc/php8.3-common"
-printf '  * CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-common/changelog.Debian.gz"
+printf '  * SECURITY UPDATE: fix CVE-2026-109618 CVE-2026-109619\n' | gzip > "$I/usr/share/doc/php8.3-common/changelog.Debian.gz"
 printf 'Package: php8.3-common\nVersion: 8.3.6-1\n\n' >> "$I/var/lib/dpkg/status"
 expect "common changelog at another version is refused" "$I" /usr/bin/php8.3 "CHECK FAILED" "could not be read"
 
@@ -241,9 +286,15 @@ expect "PHP inside an oddly named module is found" "$I" /usr/lib/httpd/modules/c
 # --------------------------------------------------------------- whole-run results
 I=$T/empty; mkdir -p "$I/usr/bin"
 out=$(bash "$CHECK" --root "$I"); rc=$?
-if [[ $rc -eq 0 && $out == *"No PHP binary, module or process found"* ]]; then
-  PASSED=$((PASSED + 1)); echo "ok    empty image -> PASS, exit 0"
-else FAILED=$((FAILED + 1)); echo "FAIL  empty image -> PASS, exit 0 (got exit $rc)"; fi
+if [[ $EUID -eq 0 ]]; then
+  if [[ $rc -eq 0 && $out == *"No PHP binary, module or process found"* ]]; then
+    PASSED=$((PASSED + 1)); echo "ok    empty image as root -> PASS, exit 0"
+  else FAILED=$((FAILED + 1)); echo "FAIL  empty image as root -> PASS, exit 0 (got exit $rc)"; fi
+else
+  if [[ $rc -eq 2 && $out != *"No PHP binary"* ]]; then
+    PASSED=$((PASSED + 1)); echo "ok    empty image without root -> CHECK FAILED, exit 2"
+  else FAILED=$((FAILED + 1)); echo "FAIL  empty image without root -> exit 2 (got exit $rc)"; fi
+fi
 
 I=$T/storage; mkdir -p "$I/var/lib/docker"
 expect "container storage is reported" "$I" /var/lib/docker "CHECK FAILED" "not inspected"

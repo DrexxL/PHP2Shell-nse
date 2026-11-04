@@ -106,9 +106,24 @@ HOST=$(hostname 2>/dev/null || echo unknown)
 [ $LIVE -eq 0 ] && HOST="image:$ROOT"
 NFAIL=0; NCHK=0; NPASS=0
 
+# esc TEXT: percent-encode the characters that could break the record:
+# "%" -> %25, "|" -> %7C, carriage return -> %0D, line feed -> %0A.
+# dec reverses it. Decode output with any URL decoder.
+esc() {
+  local t=${1//%/%25}
+  t=${t//|/%7C}; t=${t//$'\r'/%0D}; t=${t//$'\n'/%0A}
+  printf '%s' "$t"
+}
+dec() {
+  local t=${1//%0A/$'\n'}
+  t=${t//%0D/$'\r'}; t=${t//%7C/|}; t=${t//%25/%}
+  printf '%s' "$t"
+}
+
 emit() { # result sapi path seen version package reason
   case $1 in PASS) NPASS=$((NPASS + 1)) ;; FAIL) NFAIL=$((NFAIL + 1)) ;; *) NCHK=$((NCHK + 1)) ;; esac
-  printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$HOST" "$1" "$2" "$3" "$4" "${5:--}" "${6:--}" "$7"
+  printf '%s|%s|%s|%s|%s|%s|%s|%s\n' "$(esc "$HOST")" "$1" "$(esc "$2")" "$(esc "$3")" "$(esc "$4")" \
+    "$(esc "${5:--}")" "$(esc "${6:--}")" "$(esc "$7")"
 }
 
 # ---------------------------------------------------------------- helpers
@@ -135,6 +150,10 @@ is_prerelease() {
   esac
   return 1
 }
+
+# has_marker FILE: does FILE contain PHP's version marker?
+MARKER='X-Powered-By: PHP/'
+has_marker() { grep -aqF "$MARKER" "$1" 2>/dev/null; }
 
 # Mach-O (64-bit, 32-bit, universal) or ELF, from the first four bytes.
 is_program() {
@@ -163,7 +182,8 @@ sapi_of() {
     php-cgi*) echo cgi-fcgi ;;
     libphp*|mod_php*) echo apache2handler ;;
     phpdbg*)  echo phpdbg ;;
-    *) echo cli ;;
+    php|php[0-9]*) echo cli ;;
+    *) echo unknown ;;
   esac
 }
 
@@ -306,7 +326,7 @@ EOF
 
 printf '# php2shell-hostcheck-macos %s | rules %s | %s and %s | CVE-2026-115560 not covered\n' \
   "$CHECKER_VERSION" "$RULES_DATE" "$CVE_A" "$CVE_B"
-printf '# host %s | checked %s\n' "$HOST" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+printf '# host %s | checked %s | fields are percent-encoded (%%25 %%7C %%0D %%0A)\n' "$(esc "$HOST")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 printf 'host|result|sapi|path|seen|php_version|package|reason\n'
 
 missing=""
@@ -331,17 +351,29 @@ trap 'rm -rf "$TMP"' EXIT
 # inode lsof reports differs from the file's inode now, or the file is gone.
 if [ $LIVE -eq 1 ]; then
   if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -w -d txt -Fpin 2>/dev/null | awk '
+    US=$(printf '\037')
+    lsof -nP -w -d txt -Fpin 2>/dev/null | awk -v US="$US" '
       /^p/ { pid = substr($0, 2) }
       /^i/ { ino = substr($0, 2) }
-      /^n/ { print pid "|" ino "|" substr($0, 2) }' > "$TMP/lsof"
-    while IFS='|' read -r pid ino path; do
-      is_php_name "$path" || continue
+      /^n/ { print pid US ino US substr($0, 2) }' > "$TMP/lsof"
+    # Decide once per file whether it is PHP: by name, or by PHP's version
+    # marker inside (so renamed copies are found). Apple's sealed system
+    # files are not searched for the marker.
+    awk -F "$US" '{print $3}' "$TMP/lsof" | sort -u > "$TMP/lsofpaths"
+    : > "$TMP/phppaths"
+    while IFS= read -r path; do
+      case $path in /System/*|/usr/lib/*) is_php_name "$path" || continue ;; esac
+      if is_php_name "$path" || { is_program "$path" && has_marker "$path"; }; then
+        printf '%s\n' "$path" >> "$TMP/phppaths"
+      fi
+    done < "$TMP/lsofpaths"
+    awk -F "$US" 'NR == FNR { ok[$0] = 1; next } ($3 in ok)' "$TMP/phppaths" "$TMP/lsof" |
+    while IFS="$US" read -r pid ino path; do
       st=""
       now=$(inode_of "$path")
       if [ -z "$now" ] || { [ -n "$ino" ] && [ "$now" != "$ino" ]; }; then st=1; fi
-      printf '%s|%s|pid%s|%s\n' "$path" "$path" "$pid" "$st" >> "$TMP/inventory"
-    done < "$TMP/lsof"
+      printf '%s|%s|pid%s|%s\n' "$(esc "$path")" "$(esc "$path")" "$pid" "$st" >> "$TMP/inventory"
+    done
   else
     emit "CHECK FAILED" "-" "-" "-" "" "" \
       "Running processes could not be inspected: lsof is not available. Only files on disk were checked."
@@ -359,11 +391,15 @@ for s in $VMSTORES; do
 done
 find "$base" \( "${prune[@]}" -o -fstype nfs -o -fstype smbfs -o -fstype afpfs -o -fstype webdav \) -prune -o \
      -type f \( -name php -o -name 'php[0-9]*' -o -name 'php-fpm*' -o -name 'php-cgi*' -o -name 'phpdbg*' \
-                -o -name 'libphp*.so' -o -name 'libphp*.dylib' -o -name 'mod_php*.so' \) -print 2>"$TMP/errors" \
-  | while IFS= read -r f; do
+                -o -name 'libphp*.so' -o -name 'libphp*.dylib' -o -name 'mod_php*.so' \
+                -o \( -size +1M \( -perm -100 -o -perm -010 -o -perm -001 -o -name '*.dylib' -o -name '*.so' \) \) \) \
+     -print0 2>"$TMP/errors" \
+  | while IFS= read -r -d '' f; do
       is_program "$f" || continue
+      # Recognised by name, or by PHP's version marker inside (renamed copies).
+      is_php_name "$f" || has_marker "$f" || continue
       rel=${f#"$ROOT"}
-      printf '%s|%s|installed|\n' "$rel" "$f" >> "$TMP/inventory"
+      printf '%s|%s|installed|\n' "$(esc "$rel")" "$(esc "$f")" >> "$TMP/inventory"
     done
 
 # One line per (path, stale): join where each one was seen.
@@ -374,7 +410,7 @@ awk -F'|' '{ k = $1 "|" $4
   "$TMP/inventory" > "$TMP/runtimes"
 
 while IFS='|' read -r p from seen st; do
-  evaluate "$p" "$from" "$seen" "$st"
+  evaluate "$(dec "$p")" "$(dec "$from")" "$seen" "$st"
 done < "$TMP/runtimes"
 
 for s in $VMSTORES; do

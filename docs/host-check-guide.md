@@ -52,7 +52,8 @@ apk add bash findutils coreutils grep gawk
    sudo ./php2shell-hostcheck.sh
    ```
 
-4. Wait for the summary line. A full disk search can take a minute or more.
+4. Wait for the summary line. A full disk search can take a few minutes,
+   because large programs and libraries are also searched for renamed PHP.
 5. Save the output for your records:
 
    ```bash
@@ -107,7 +108,7 @@ The output has three parts:
 # php2shell-hostcheck 1.1 | rules 2026-11-04 | CVE-2026-109618 and CVE-2026-109619 | CVE-2026-115560 not covered
 # host web01 | checked 2026-11-04T06:32:04Z
 host|result|sapi|path|seen|php_version|package|reason
-web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records both ...
+web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubuntu0.24.04.13|The changelog (/usr/share/doc/php8.3-common/changelog.Debian.gz) records a fix for both CVE-2026-109618 and CVE-2026-109619, e.g. "SECURITY UPDATE: Remote RCE via state corruption issue".
 # summary: 1 PASS, 0 FAIL, 0 CHECK FAILED
 ```
 
@@ -128,6 +129,16 @@ web01|PASS|cli|/usr/bin/php8.3|pid201,installed|8.3.6|dpkg:php8.3-cli 8.3.6-0ubu
 
 3. **The summary line** counts each result.
 
+**Special characters are encoded.** A file name could contain `|` or a line
+break, which would otherwise add columns or fake result lines. So every field
+is percent-encoded: `%` becomes `%25`, `|` becomes `%7C`, a carriage return
+becomes `%0D` and a line break becomes `%0A`. **Example:** a file named
+`/opt/x|y/php` appears as `/opt/x%7Cy/php`. To decode a saved output file:
+
+```bash
+python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l), end='') for l in sys.stdin]" < php2shell-web01.txt
+```
+
 The `sapi` field can be:
 
 | Value | What it is |
@@ -137,6 +148,7 @@ The `sapi` field can be:
 | `cgi-fcgi` | `php-cgi`, started by the web server for each request |
 | `apache2handler` | PHP loaded inside Apache as a module (`libphp*.so` or `mod_php*.so`) |
 | `phpdbg` | PHP's debugger |
+| `unknown` | A file that carries PHP's version text but has an unusual name, such as a renamed PHP binary |
 
 ## Exit status
 
