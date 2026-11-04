@@ -186,5 +186,5 @@ Apache License 2.0. See [LICENSE](LICENSE).
 
 ## Credits
 
-Written by Drexx Laggui with assistance from Claude (Anthropic); the commit
+Written by Drexx Laggui with assistance from Claude (Anthropic's Opus 5.5) and Codex (OpenAI's Daybreak Blue); the commit
 history records the sessions.
